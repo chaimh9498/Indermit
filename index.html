@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Streaming Platform</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0b0b0b;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: auto;
+            padding: 40px 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .film-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+        }
+
+        .film-card {
+            background: #161616;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(0,0,0,0.6);
+        }
+
+        .film-card img {
+            width: 100%;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .film-card h3 {
+            margin: 10px 0;
+        }
+
+        .buy-btn {
+            margin-top: 10px;
+            padding: 12px 20px;
+            background: #ff4747;
+            border: none;
+            color: #fff;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .buy-btn:hover {
+            background: #ff2f2f;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Featured Films</h1>
+
+        <div class="film-grid">
+
+            <!-- Film 1: Ben Shapiro's Speech -->
+            <div class="film-card">
+                <!-- Replace this with your real preview image path -->
+                <img src="assets/ben-shapiro-preview.jpg" alt="Ben Shapiro's Speech">
+                <h3>Ben Shapiro's Speech</h3>
+                <p>Watch the full speech instantly after purchase.</p>
+                <button class="buy-btn" onclick="window.location.href='https://buy.stripe.com/14AeVdfD65ZSdvm0dfeEo00'">
+                    Buy & Watch
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>
