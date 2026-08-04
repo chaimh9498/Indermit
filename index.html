@@ -1,18 +1,128 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, intial-scale=1.0"/>
-<title>Indermit</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Random Yes/No Generator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            border-color: #007bff;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #answer {
+            margin-top: 24px;
+            font-size: 48px;
+            font-weight: bold;
+            min-height: 60px;
+        }
+
+        /* Classes added by JavaScript for color-coding the response */
+        .yes { color: #28a745; }
+        .no { color: #dc3545; }
+        .error { color: #888; font-size: 16px; }
+    </style>
 </head>
 <body>
-<header>
-<h1>Welcome to Indermit.</h1>
-</header>
-<main>
-<section>
-<h2>Coming Soon!</h2>
-</section>
-</main>
+
+    <div class="container">
+        <h1>Ask a Question</h1>
+        <input type="text" id="questionInput" placeholder="e.g., Should I buy that?">
+        <button onclick="generateAnswer()">Ask</button>
+        <div id="answer"></div>
+    </div>
+
+    <script>
+        function generateAnswer() {
+            const inputField = document.getElementById('questionInput');
+            const answerDisplay = document.getElementById('answer');
+            
+            // Check if the user actually typed something
+            if (inputField.value.trim() === "") {
+                answerDisplay.textContent = "Please ask a question!";
+                answerDisplay.className = "error";
+                return;
+            }
+
+            // Math.random() generates a decimal between 0 and 1. 
+            // We check if it's 0.5 or higher to get a 50/50 chance.
+            const isYes = Math.random() >= 0.5;
+
+            if (isYes) {
+                answerDisplay.textContent = "Yes.";
+                answerDisplay.className = "yes";
+            } else {
+                answerDisplay.textContent = "No.";
+                answerDisplay.className = "no";
+            }
+        }
+
+        // Allow pressing "Enter" on the keyboard to submit the question
+        document.getElementById("questionInput").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                generateAnswer();
+            }
+        });
+    </script>
+
 </body>
 </html>
