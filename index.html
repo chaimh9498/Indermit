@@ -73,12 +73,26 @@
             font-size: 48px;
             font-weight: bold;
             min-height: 60px;
+            /* Start invisible before the first question is asked */
+            opacity: 0; 
         }
 
-        /* Classes added by JavaScript for color-coding the response */
+        /* The colors for the text */
         .yes { color: #28a745; }
         .no { color: #dc3545; }
         .error { color: #888; font-size: 16px; }
+
+        /* The Pop Animation */
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* We will apply this class with JavaScript */
+        .animate-pop {
+            animation: popIn 0.3s ease-out forwards;
+        }
     </style>
 </head>
 <body>
@@ -95,27 +109,32 @@
             const inputField = document.getElementById('questionInput');
             const answerDisplay = document.getElementById('answer');
             
-            // Check if the user actually typed something
+            // 1. Remove the animation class first so we can trigger it again
+            answerDisplay.classList.remove('animate-pop');
+            
+            // 2. This line forces the browser to "redraw", which is necessary to restart the animation
+            void answerDisplay.offsetWidth;
+
+            // 3. Check if the user typed something
             if (inputField.value.trim() === "") {
                 answerDisplay.textContent = "Please ask a question!";
-                answerDisplay.className = "error";
+                answerDisplay.className = "error animate-pop";
                 return;
             }
 
-            // Math.random() generates a decimal between 0 and 1. 
-            // We check if it's 0.5 or higher to get a 50/50 chance.
+            // 4. Generate the random Yes or No
             const isYes = Math.random() >= 0.5;
 
             if (isYes) {
                 answerDisplay.textContent = "Yes.";
-                answerDisplay.className = "yes";
+                answerDisplay.className = "yes animate-pop";
             } else {
                 answerDisplay.textContent = "No.";
-                answerDisplay.className = "no";
+                answerDisplay.className = "no animate-pop";
             }
         }
 
-        // Allow pressing "Enter" on the keyboard to submit the question
+        // Allow pressing "Enter"
         document.getElementById("questionInput").addEventListener("keypress", function(event) {
             if (event.key === "Enter") {
                 event.preventDefault();
