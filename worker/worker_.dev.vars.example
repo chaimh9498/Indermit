@@ -1,0 +1,10 @@
+CLERK_ISSUER=https://your-clerk-domain.clerk.accounts.dev
+CLERK_JWKS_URL=https://your-clerk-domain.clerk.accounts.dev/.well-known/jwks.json
+CLERK_AUTHORIZED_PARTIES=http://localhost:5173,https://indermit.com
+STRIPE_SECRET_KEY=sk_test_replace_me
+STRIPE_WEBHOOK_SECRET=whsec_replace_me
+OPENAI_API_KEY=sk-replace_me
+GOOGLE_API_KEY=replace_me
+XAI_API_KEY=replace_me
+XAI_IMAGE_MODEL=replace_with_model_from_xai_console
+IMAGE_SIGNING_SECRET=replace_with_a_long_random_secret
