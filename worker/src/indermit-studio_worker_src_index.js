@@ -1,0 +1,216 @@
+import { authenticate, AuthError } from "./auth.js";
+import { generateImage, MODEL_CONFIG } from "./providers.js";
+import { createCheckoutSession, verifyStripeSignature } from "./stripe.js";
+import { constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode } from "./utils.js";
+
+export default {
+  async fetch(request, env, context) {
+    const cors = corsHeaders(request, env);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+
+    try {
+      const url = new URL(request.url);
+      let response;
+
+      if (request.method === "GET" && url.pathname === "/v1/health") {
+        response = json({ ok: true, service: "indermit-api" });
+      } else if (request.method === "POST" && url.pathname === "/v1/webhooks/stripe") {
+        response = await handleStripeWebhook(request, env);
+      } else if (request.method === "GET" && url.pathname.startsWith("/v1/images/")) {
+        response = await serveImage(request, env);
+      } else {
+        const session = await authenticate(request, env);
+        response = await handleAuthenticated(request, env, context, session);
+      }
+
+      Object.entries(cors).forEach(([key, value]) => response.headers.set(key, value));
+      response.headers.set("x-content-type-options", "nosniff");
+      return response;
+    } catch (error) {
+      const status = error instanceof AuthError ? 401 : 500;
+      const message = error instanceof AuthError ? error.message : "Something went wrong. Please try again.";
+      console.error("Request failed", { name: error?.name, message: error?.message, stack: error?.stack });
+      return json({ error: message }, status, cors);
+    }
+  },
+};
+
+async function handleAuthenticated(request, env, _context, { userId }) {
+  const url = new URL(request.url);
+  await ensureUser(env, userId);
+
+  if (request.method === "GET" && url.pathname === "/v1/account") {
+    const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
+    return json({ creditBalance: user?.credit_balance || 0 });
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/billing/checkout") {
+    const input = await request.json();
+    const session = await createCheckoutSession(env, userId, input.bundleId);
+    return json({ url: session.url });
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/generations") {
+    const { results } = await env.DB.prepare(
+      `SELECT id, provider, model, prompt, aspect_ratio, credit_cost, created_at
+       FROM generations WHERE user_id = ? AND status = 'completed'
+       ORDER BY created_at DESC LIMIT 60`,
+    ).bind(userId).all();
+    const generations = await Promise.all(results.map((item) => serializeGeneration(item, env, url.origin)));
+    return json({ generations });
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/generations") {
+    return createGeneration(request, env, userId, url.origin);
+  }
+
+  return json({ error: "Not found" }, 404);
+}
+
+async function ensureUser(env, userId) {
+  await env.DB.prepare("INSERT OR IGNORE INTO users (user_id) VALUES (?)").bind(userId).run();
+}
+
+async function createGeneration(request, env, userId, apiOrigin) {
+  const input = await request.json();
+  const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
+  const aspectRatio = ["1:1", "16:9", "9:16"].includes(input.aspectRatio) ? input.aspectRatio : "1:1";
+  const config = MODEL_CONFIG[input.model];
+  if (!config) return json({ error: "Choose a supported model." }, 400);
+  if (!prompt || prompt.length > 1200) return json({ error: "Prompt must contain 1–1,200 characters." }, 400);
+
+  const generationId = crypto.randomUUID();
+  const debitResults = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE users SET credit_balance = credit_balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND credit_balance >= ?",
+    ).bind(config.credits, userId, config.credits),
+    env.DB.prepare(
+      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, status)
+       SELECT ?, ?, ?, ?, ?, ?, ?, 'processing' WHERE changes() = 1`,
+    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, config.credits),
+    env.DB.prepare(
+      `INSERT INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
+       SELECT ?, ?, ?, 'generation', ?, ? WHERE EXISTS (SELECT 1 FROM generations WHERE id = ?)`,
+    ).bind(crypto.randomUUID(), userId, -config.credits, `generation:${generationId}`, `${config.provider} image generation`, generationId),
+  ]);
+
+  if (!debitResults[1]?.meta?.changes) {
+    const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
+    return json({ error: `You need ${config.credits} credits. Your balance is ${user?.credit_balance || 0}.` }, 402);
+  }
+
+  try {
+    const generated = await generateImage(env, { model: input.model, prompt, aspectRatio });
+    const extension = generated.mimeType.includes("webp") ? "webp" : generated.mimeType.includes("jpeg") ? "jpg" : "png";
+    const objectKey = `${userId}/${generationId}.${extension}`;
+    await env.IMAGES.put(objectKey, generated.bytes, {
+      httpMetadata: { contentType: generated.mimeType, cacheControl: "private, max-age=31536000, immutable" },
+      customMetadata: { userId, generationId, provider: config.provider },
+    });
+    const completed = await env.DB.prepare(
+      `UPDATE generations SET status = 'completed', object_key = ?, mime_type = ?, completed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ? AND status = 'processing'`,
+    ).bind(objectKey, generated.mimeType, generationId, userId).run();
+    if (!completed.meta.changes) {
+      await env.IMAGES.delete(objectKey);
+      throw new Error("Generation could not be finalized");
+    }
+  } catch (error) {
+    await refundGeneration(env, userId, generationId, config.credits, error);
+    const publicMessage = error.message?.includes("not configured")
+      ? "That model is not available yet. Your credits were returned."
+      : "The model could not create this image. Your credits were returned.";
+    return json({ error: publicMessage }, 502);
+  }
+
+  const row = await env.DB.prepare(
+    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, created_at FROM generations WHERE id = ?",
+  ).bind(generationId).first();
+  const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
+  return json({ generation: await serializeGeneration(row, env, apiOrigin), creditBalance: user.credit_balance }, 201);
+}
+
+async function refundGeneration(env, userId, generationId, credits, error) {
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE users SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND EXISTS (SELECT 1 FROM generations WHERE id = ? AND status = 'processing')`,
+    ).bind(credits, userId, generationId),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
+       SELECT ?, ?, ?, 'refund', ?, 'Automatic refund for failed generation' WHERE changes() = 1`,
+    ).bind(crypto.randomUUID(), userId, credits, `refund:${generationId}`),
+    env.DB.prepare(
+      `UPDATE generations SET status = 'failed', error_code = ?, completed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ? AND status = 'processing'`,
+    ).bind(safeErrorCode(error), generationId, userId),
+  ]);
+}
+
+async function serializeGeneration(row, env, apiOrigin) {
+  const token = await hmacHex(env.IMAGE_SIGNING_SECRET, row.id);
+  return {
+    id: row.id,
+    provider: row.provider,
+    model: row.model,
+    prompt: row.prompt,
+    aspectRatio: row.aspect_ratio,
+    creditCost: row.credit_cost,
+    createdAt: row.created_at,
+    imageUrl: `${apiOrigin}/v1/images/${row.id}?token=${token}`,
+    downloadUrl: `${apiOrigin}/v1/images/${row.id}?token=${token}&download=1`,
+  };
+}
+
+async function serveImage(request, env) {
+  const url = new URL(request.url);
+  const id = url.pathname.split("/").pop();
+  const token = url.searchParams.get("token") || "";
+  const expected = await hmacHex(env.IMAGE_SIGNING_SECRET, id);
+  if (!constantTimeEqual(token, expected)) return json({ error: "Not found" }, 404);
+  const row = await env.DB.prepare(
+    "SELECT object_key, mime_type FROM generations WHERE id = ? AND status = 'completed'",
+  ).bind(id).first();
+  if (!row?.object_key) return json({ error: "Not found" }, 404);
+  const object = await env.IMAGES.get(row.object_key);
+  if (!object) return json({ error: "Not found" }, 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("content-type", row.mime_type || "image/webp");
+  headers.set("cache-control", "private, max-age=86400");
+  if (url.searchParams.get("download") === "1") headers.set("content-disposition", `attachment; filename="indermit-${id}.webp"`);
+  return new Response(object.body, { headers });
+}
+
+async function handleStripeWebhook(request, env) {
+  const rawBody = await request.text();
+  const signature = request.headers.get("stripe-signature") || "";
+  if (!await verifyStripeSignature(rawBody, signature, env.STRIPE_WEBHOOK_SECRET)) {
+    return json({ error: "Invalid webhook signature" }, 400);
+  }
+  const event = JSON.parse(rawBody);
+  if (event.type !== "checkout.session.completed") return json({ received: true });
+  const session = event.data?.object;
+  if (session?.payment_status !== "paid") return json({ received: true });
+
+  const userId = session.metadata?.user_id || session.client_reference_id;
+  const credits = Number(session.metadata?.credits);
+  if (!userId || !Number.isInteger(credits) || credits <= 0 || credits > 100000) {
+    return json({ error: "Invalid checkout metadata" }, 400);
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO users (user_id, stripe_customer_id) VALUES (?, ?)").bind(userId, session.customer || null),
+    env.DB.prepare("INSERT OR IGNORE INTO stripe_events (event_id, event_type) VALUES (?, ?)").bind(event.id, event.type),
+    env.DB.prepare(
+      `UPDATE users SET credit_balance = credit_balance + ?, stripe_customer_id = COALESCE(?, stripe_customer_id), updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND changes() = 1`,
+    ).bind(credits, session.customer || null, userId),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
+       SELECT ?, ?, ?, 'purchase', ?, 'Stripe credit purchase' WHERE changes() = 1`,
+    ).bind(crypto.randomUUID(), userId, credits, `stripe:${event.id}`),
+  ]);
+  return json({ received: true });
+}
