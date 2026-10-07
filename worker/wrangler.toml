@@ -16,7 +16,7 @@ XAI_IMAGE_MODEL = "grok-imagine-image-2.0"
 [[d1_databases]]
 binding = "DB"
 database_name = "indermit-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "50b1d263-1885-4f67-bbc5-94171d8a1f7b"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
