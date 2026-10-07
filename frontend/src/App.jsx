@@ -20,15 +20,20 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { apiRequest } from "./api";
+import { anonymousApiRequest, apiRequest } from "./api";
 
 const MODELS = [
+  {
+    id: "auto", provider: "Auto", name: "Best value",
+    description: "Indermit selects the lowest-cost available frontier model.",
+    credits: 15, accent: "violet", badge: "Cheapest",
+  },
   {
     id: "openai-sunburst",
     provider: "OpenAI",
     name: "Sunburst",
     description: "Precise composition, detail, and typography.",
-    credits: 70,
+    credits: 30,
     accent: "mint",
     badge: "Best quality",
   },
@@ -37,7 +42,7 @@ const MODELS = [
     provider: "Google",
     name: "Nano Banana 2",
     description: "Fast generation with excellent prompt understanding.",
-    credits: 50,
+    credits: 20,
     accent: "blue",
     badge: "Balanced",
   },
@@ -46,7 +51,7 @@ const MODELS = [
     provider: "xAI",
     name: "Imagine",
     description: "Bold, high-speed creative image generation.",
-    credits: 40,
+    credits: 15,
     accent: "violet",
     badge: "Fastest",
   },
@@ -65,16 +70,18 @@ const PACKAGES = [
 ];
 
 function App() {
-  const { getToken } = useAuth();
+  const { getToken, isSignedIn } = useAuth();
   const [model, setModel] = useState(MODELS[0]);
   const [prompt, setPrompt] = useState("");
   const [aspect, setAspect] = useState("1:1");
   const [balance, setBalance] = useState(null);
+  const [freeRemaining, setFreeRemaining] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [anonymousUsed, setAnonymousUsed] = useState(false);
 
   const selectedAspect = useMemo(
     () => ASPECTS.find((item) => item.value === aspect),
@@ -88,6 +95,7 @@ function App() {
         apiRequest("/v1/generations", getToken),
       ]);
       setBalance(account.creditBalance);
+      setFreeRemaining(account.freeGenerationsRemaining);
       setHistory(images.generations || []);
     } catch (error) {
       setMessage(error.message);
@@ -102,17 +110,26 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (isSignedIn) loadAccount();
+  }, [isSignedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function generate() {
     if (!prompt.trim() || loading) return;
     setLoading(true);
     setMessage("");
     try {
-      const result = await apiRequest("/v1/generations", getToken, {
+      const options = {
         method: "POST",
         body: JSON.stringify({ model: model.id, prompt: prompt.trim(), aspectRatio: aspect }),
-      });
-      setBalance(result.creditBalance);
+      };
+      const result = isSignedIn
+        ? await apiRequest("/v1/generations", getToken, options)
+        : await anonymousApiRequest("/v1/anonymous/generations", options);
+      if (typeof result.creditBalance === "number") setBalance(result.creditBalance);
+      if (typeof result.freeGenerationsRemaining === "number") setFreeRemaining(result.freeGenerationsRemaining);
       setHistory((current) => [result.generation, ...current]);
+      if (!isSignedIn) setAnonymousUsed(true);
     } catch (error) {
       setMessage(error.message);
       if (error.message.toLowerCase().includes("credit")) setBuyOpen(true);
@@ -139,6 +156,7 @@ function App() {
       <div className="noise" />
       <Header
         balance={balance}
+        freeRemaining={freeRemaining}
         onBuy={() => setBuyOpen(true)}
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
@@ -218,24 +236,27 @@ function App() {
               <SignedIn>
                 <button className="generate-button" onClick={generate} disabled={!prompt.trim() || loading}>
                   {loading ? <LoaderCircle className="spin" size={18} /> : <WandSparkles size={18} />}
-                  {loading ? "Creating…" : `Generate · ${model.credits}`}
+                  {loading ? "Creating…" : freeRemaining > 0 ? `Generate free · ${freeRemaining} left` : `Generate · ${model.credits}`}
                 </button>
               </SignedIn>
               <SignedOut>
-                <SignUpButton mode="modal">
-                  <button className="generate-button"><WandSparkles size={18} /> Sign up to create</button>
-                </SignUpButton>
+                <button className="generate-button" onClick={generate} disabled={!prompt.trim() || loading || anonymousUsed}>
+                  {loading ? <LoaderCircle className="spin" size={18} /> : <WandSparkles size={18} />}
+                  {loading ? "Creating…" : anonymousUsed ? "Free image used" : "Generate your free image"}
+                </button>
               </SignedOut>
             </div>
           </div>
 
           {message && <div className="notice">{message}</div>}
+          {anonymousUsed && <div className="signup-reward">
+            <span>Your image is ready. Sign up for 5 more generations with any model.</span>
+            <SignUpButton mode="modal"><button>Get 5 free generations</button></SignUpButton>
+          </div>}
           <p className="keyboard-hint">{selectedAspect.label} output · Press ⌘ Enter to generate</p>
         </section>
 
-        <SignedIn>
-          <Gallery history={history} loadAccount={loadAccount} />
-        </SignedIn>
+        <Gallery history={history} />
 
         <section className="value-strip">
           <div><Zap size={20} /><span><strong>One balance</strong> across every model</span></div>
@@ -255,7 +276,7 @@ function App() {
   );
 }
 
-function Header({ balance, onBuy, menuOpen, setMenuOpen, loadAccount }) {
+function Header({ balance, freeRemaining, onBuy, menuOpen, setMenuOpen, loadAccount }) {
   return (
     <header>
       <a className="brand" href="/"><BrandMark /> indermit</a>
@@ -266,7 +287,7 @@ function Header({ balance, onBuy, menuOpen, setMenuOpen, loadAccount }) {
       </nav>
       <div className="header-actions">
         <SignedIn>
-          <button className="balance-pill" onClick={onBuy}><Coins size={15} /> {balance ?? "—"} <span>credits</span></button>
+          <button className="balance-pill" onClick={onBuy}><Coins size={15} /> {freeRemaining > 0 ? freeRemaining : balance ?? "—"} <span>{freeRemaining > 0 ? "free" : "credits"}</span></button>
           <UserButton />
         </SignedIn>
         <SignedOut>
@@ -281,8 +302,7 @@ function Header({ balance, onBuy, menuOpen, setMenuOpen, loadAccount }) {
   );
 }
 
-function Gallery({ history, loadAccount }) {
-  useEffect(() => { loadAccount(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+function Gallery({ history }) {
   if (!history.length) return null;
   return (
     <section className="gallery">
@@ -333,7 +353,7 @@ function BrandMark() {
 }
 
 function ProviderMark({ provider }) {
-  return <span className={`provider-mark ${provider.toLowerCase()}`}>{provider === "OpenAI" ? "◎" : provider === "Google" ? "G" : "𝕏"}</span>;
+  return <span className={`provider-mark ${provider.toLowerCase()}`}>{provider === "OpenAI" ? "◎" : provider === "Google" ? "G" : provider === "Auto" ? "✦" : "𝕏"}</span>;
 }
 
 export default App;
