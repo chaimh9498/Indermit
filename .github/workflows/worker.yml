@@ -24,6 +24,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
     steps:
@@ -76,9 +77,8 @@ jobs:
           put_secret OPENAI_API_KEY "$OPENAI_API_KEY"
           put_secret GOOGLE_API_KEY "$GOOGLE_API_KEY"
           put_secret XAI_API_KEY "$XAI_API_KEY"
+          put_secret OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
           put_secret STRIPE_SECRET_KEY "$STRIPE_SECRET_KEY"
           put_secret STRIPE_WEBHOOK_SECRET "$STRIPE_WEBHOOK_SECRET"
       - name: Verify production health
         run: curl --fail --retry 10 --retry-delay 6 --retry-all-errors https://api.indermit.com/v1/health
-
-# Deployment retry after enabling R2
