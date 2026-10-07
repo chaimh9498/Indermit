@@ -1,14 +1,17 @@
 name = "indermit-api"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
+routes = [{ pattern = "api.indermit.com", custom_domain = true }]
 
 [vars]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://indermit.com"
-CLERK_ISSUER = "https://your-clerk-domain.clerk.accounts.dev"
+CLERK_ISSUER = "https://clerk.indermit.com"
+CLERK_AUTHORIZED_PARTIES = "https://indermit.com"
 OPENAI_IMAGE_MODEL = "gpt-image-2.5-sunburst"
 GOOGLE_IMAGE_MODEL = "gemini-3.1-flash-image"
 XAI_IMAGE_ENDPOINT = "https://api.x.ai/v1/images/generations"
+XAI_IMAGE_MODEL = "grok-imagine-image-2.0"
 
 [[d1_databases]]
 binding = "DB"
@@ -20,5 +23,5 @@ migrations_dir = "migrations"
 binding = "IMAGES"
 bucket_name = "indermit-images"
 
-# Add a custom domain after the first successful deployment:
-# routes = [{ pattern = "api.indermit.com", custom_domain = true }]
+[observability]
+enabled = true
