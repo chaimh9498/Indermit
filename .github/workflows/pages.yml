@@ -27,7 +27,7 @@ jobs:
       - run: npm run build
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: https://api.indermit.com
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
