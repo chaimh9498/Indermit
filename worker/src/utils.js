@@ -35,7 +35,7 @@ export function corsHeaders(request, env) {
   return {
     "access-control-allow-origin": allowed.includes(origin) ? origin : env.FRONTEND_URL,
     "access-control-allow-headers": "Authorization, Content-Type, Stripe-Signature",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-max-age": "86400",
     vary: "Origin",
   };
