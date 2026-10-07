@@ -43,16 +43,16 @@ jobs:
             else
               npx wrangler d1 create indermit-db --location enam --binding DB --update-config --config worker/wrangler.toml
             fi
-            r2_output="$(npx wrangler r2 bucket create indermit-images --location enam --config worker/wrangler.toml 2>&1)" || {
-              echo "$r2_output"
-              echo "$r2_output" | grep -qi "already exists" || exit 1
-            }
             git config user.name github-actions
             git config user.email github-actions@github.com
             git add worker/wrangler.toml
             git commit -m "Save production Cloudflare resource IDs"
             git push
           fi
+          r2_output="$(npx wrangler r2 bucket create indermit-images --location enam --config worker/wrangler.toml 2>&1)" || {
+            echo "$r2_output"
+            echo "$r2_output" | grep -qi "already exists" || exit 1
+          }
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply indermit-db --remote --config worker/wrangler.toml
       - name: Deploy Worker
