@@ -1,14 +1,16 @@
 import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
-  "openai-sunburst": { provider: "OpenAI", credits: 70 },
-  "google-nano-banana": { provider: "Google", credits: 50 },
-  "xai-imagine": { provider: "xAI", credits: 40 },
+  auto: { provider: "xAI", credits: 15 },
+  "openai-sunburst": { provider: "OpenAI", credits: 30 },
+  "google-nano-banana": { provider: "Google", credits: 20 },
+  "xai-imagine": { provider: "xAI", credits: 15 },
 };
 
 const OPENAI_SIZES = { "1:1": "1024x1024", "16:9": "1536x864", "9:16": "864x1536" };
 
 export async function generateImage(env, input) {
+  if (input.model === "auto") return generateXai(env, input);
   if (input.model === "openai-sunburst") return generateOpenAI(env, input);
   if (input.model === "google-nano-banana") return generateGoogle(env, input);
   if (input.model === "xai-imagine") return generateXai(env, input);
@@ -24,7 +26,7 @@ async function generateOpenAI(env, { prompt, aspectRatio }) {
       model: env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst",
       prompt,
       size: OPENAI_SIZES[aspectRatio],
-      quality: "medium",
+      quality: "low",
       output_format: "webp",
     }),
   });
@@ -43,7 +45,7 @@ async function generateGoogle(env, { prompt, aspectRatio }) {
     body: JSON.stringify({
       model: env.GOOGLE_IMAGE_MODEL || "gemini-3.1-flash-image",
       input: prompt,
-      response_format: { type: "image", mime_type: "image/webp", aspect_ratio: aspectRatio },
+      response_format: { type: "image", mime_type: "image/jpeg", aspect_ratio: aspectRatio, image_size: "1K" },
     }),
   });
   const result = await response.json();
@@ -52,15 +54,22 @@ async function generateGoogle(env, { prompt, aspectRatio }) {
   const block = result.steps?.flatMap((step) => step.content || []).find((item) => item.type === "image");
   const encoded = direct?.data || block?.data;
   if (!encoded) throw new ProviderError("Google", "No image returned");
-  return { bytes: base64ToBytes(encoded), mimeType: direct?.mime_type || block?.mime_type || "image/webp" };
+  return { bytes: base64ToBytes(encoded), mimeType: direct?.mime_type || block?.mime_type || "image/jpeg" };
 }
 
 async function generateXai(env, { prompt, aspectRatio }) {
-  if (!env.XAI_API_KEY || !env.XAI_IMAGE_MODEL) throw new Error("xAI is not configured");
+  if (!env.XAI_API_KEY) throw new Error("xAI is not configured");
   const response = await fetch(env.XAI_IMAGE_ENDPOINT || "https://api.x.ai/v1/images/generations", {
     method: "POST",
     headers: { Authorization: `Bearer ${env.XAI_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: env.XAI_IMAGE_MODEL, prompt, aspect_ratio: aspectRatio, response_format: "b64_json" }),
+    body: JSON.stringify({
+      model: env.XAI_IMAGE_MODEL || "grok-imagine-image-2.0",
+      prompt,
+      aspect_ratio: aspectRatio,
+      resolution: "1k",
+      quality: "low",
+      response_format: "b64_json",
+    }),
   });
   const result = await response.json();
   if (!response.ok) throw new ProviderError("xAI", result.error?.message);
