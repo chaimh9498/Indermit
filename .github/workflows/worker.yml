@@ -37,7 +37,12 @@ jobs:
         run: |
           set -euo pipefail
           if grep -q REPLACE_WITH_D1_DATABASE_ID worker/wrangler.toml; then
-            npx wrangler d1 create indermit-db --location enam --binding DB --update-config --config worker/wrangler.toml
+            existing_db_id="$(npx wrangler d1 list --json | node -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { const rows = JSON.parse(input); process.stdout.write(rows.find(row => row.name === "indermit-db")?.uuid || ""); });')"
+            if [ -n "$existing_db_id" ]; then
+              DB_ID="$existing_db_id" node -e 'const fs = require("fs"); const path = "worker/wrangler.toml"; const next = fs.readFileSync(path, "utf8").replace("REPLACE_WITH_D1_DATABASE_ID", process.env.DB_ID); fs.writeFileSync(path, next);'
+            else
+              npx wrangler d1 create indermit-db --location enam --binding DB --update-config --config worker/wrangler.toml
+            fi
             r2_output="$(npx wrangler r2 bucket create indermit-images --location enam --config worker/wrangler.toml 2>&1)" || {
               echo "$r2_output"
               echo "$r2_output" | grep -qi "already exists" || exit 1
