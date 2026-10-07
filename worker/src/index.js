@@ -18,6 +18,8 @@ export default {
         response = await handleStripeWebhook(request, env);
       } else if (request.method === "GET" && url.pathname.startsWith("/v1/images/")) {
         response = await serveImage(request, env);
+      } else if (request.method === "POST" && url.pathname === "/v1/anonymous/generations") {
+        response = await createAnonymousGeneration(request, env, url.origin);
       } else {
         const session = await authenticate(request, env);
         response = await handleAuthenticated(request, env, context, session);
@@ -40,8 +42,13 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   await ensureUser(env, userId);
 
   if (request.method === "GET" && url.pathname === "/v1/account") {
-    const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
-    return json({ creditBalance: user?.credit_balance || 0 });
+    const user = await env.DB.prepare(
+      "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
+    ).bind(userId).first();
+    return json({
+      creditBalance: user?.credit_balance || 0,
+      freeGenerationsRemaining: user?.free_generations_remaining || 0,
+    });
   }
 
   if (request.method === "POST" && url.pathname === "/v1/billing/checkout") {
@@ -68,83 +75,167 @@ async function handleAuthenticated(request, env, _context, { userId }) {
 }
 
 async function ensureUser(env, userId) {
-  await env.DB.prepare("INSERT OR IGNORE INTO users (user_id) VALUES (?)").bind(userId).run();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO users (user_id, free_generations_remaining) VALUES (?, 5)",
+  ).bind(userId).run();
 }
 
 async function createGeneration(request, env, userId, apiOrigin) {
-  const input = await request.json();
+  const parsed = parseGeneration(await request.json());
+  if (parsed.error) return parsed.error;
+  const { input, prompt, aspectRatio, config } = parsed;
+  const generationId = crypto.randomUUID();
+  const account = await env.DB.prepare(
+    "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
+  ).bind(userId).first();
+  const chargeKind = account.free_generations_remaining > 0 ? "signup_free" : "credits";
+  const creditCost = chargeKind === "signup_free" ? 0 : config.credits;
+  const reserved = chargeKind === "signup_free"
+    ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio })
+    : await reserveCreditGeneration(env, { generationId, userId, config, input, prompt, aspectRatio });
+
+  if (!reserved) {
+    const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
+    return json({ error: `You need ${config.credits} credits. Your balance is ${user?.credit_balance || 0}.` }, 402);
+  }
+
+  try {
+    await generateAndStore(env, { generationId, userId, config, input, prompt, aspectRatio });
+  } catch (error) {
+    await refundGeneration(env, userId, generationId, creditCost, chargeKind, error);
+    const publicMessage = error.message?.includes("not configured")
+      ? "That model is not available yet. Your generation was returned."
+      : "The model could not create this image. Your generation was returned.";
+    return json({ error: publicMessage }, 502);
+  }
+
+  const row = await env.DB.prepare(
+    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, created_at FROM generations WHERE id = ?",
+  ).bind(generationId).first();
+  const user = await env.DB.prepare(
+    "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
+  ).bind(userId).first();
+  return json({
+    generation: await serializeGeneration(row, env, apiOrigin),
+    creditBalance: user.credit_balance,
+    freeGenerationsRemaining: user.free_generations_remaining,
+  }, 201);
+}
+
+function parseGeneration(input) {
   const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
   const aspectRatio = ["1:1", "16:9", "9:16"].includes(input.aspectRatio) ? input.aspectRatio : "1:1";
   const config = MODEL_CONFIG[input.model];
-  if (!config) return json({ error: "Choose a supported model." }, 400);
-  if (!prompt || prompt.length > 1200) return json({ error: "Prompt must contain 1–1,200 characters." }, 400);
+  if (!config) return { error: json({ error: "Choose a supported model." }, 400) };
+  if (!prompt || prompt.length > 1200) return { error: json({ error: "Prompt must contain 1–1,200 characters." }, 400) };
+  return { input, prompt, aspectRatio, config };
+}
 
-  const generationId = crypto.randomUUID();
-  const debitResults = await env.DB.batch([
+async function reserveFreeGeneration(env, details) {
+  const { generationId, userId, config, input, prompt, aspectRatio } = details;
+  const results = await env.DB.batch([
     env.DB.prepare(
-      "UPDATE users SET credit_balance = credit_balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND credit_balance >= ?",
+      "UPDATE users SET free_generations_remaining = free_generations_remaining - 1 WHERE user_id = ? AND free_generations_remaining > 0",
+    ).bind(userId),
+    env.DB.prepare(
+      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, status)
+       SELECT ?, ?, ?, ?, ?, ?, 0, 'signup_free', 'processing' WHERE changes() = 1`,
+    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio),
+  ]);
+  return Boolean(results[1]?.meta?.changes);
+}
+
+async function reserveCreditGeneration(env, details) {
+  const { generationId, userId, config, input, prompt, aspectRatio } = details;
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE users SET credit_balance = credit_balance - ? WHERE user_id = ? AND credit_balance >= ?",
     ).bind(config.credits, userId, config.credits),
     env.DB.prepare(
-      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, status)
-       SELECT ?, ?, ?, ?, ?, ?, ?, 'processing' WHERE changes() = 1`,
+      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, status)
+       SELECT ?, ?, ?, ?, ?, ?, ?, 'credits', 'processing' WHERE changes() = 1`,
     ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, config.credits),
     env.DB.prepare(
       `INSERT INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
        SELECT ?, ?, ?, 'generation', ?, ? WHERE EXISTS (SELECT 1 FROM generations WHERE id = ?)`,
     ).bind(crypto.randomUUID(), userId, -config.credits, `generation:${generationId}`, `${config.provider} image generation`, generationId),
   ]);
-
-  if (!debitResults[1]?.meta?.changes) {
-    const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
-    return json({ error: `You need ${config.credits} credits. Your balance is ${user?.credit_balance || 0}.` }, 402);
-  }
-
-  try {
-    const generated = await generateImage(env, { model: input.model, prompt, aspectRatio });
-    const extension = generated.mimeType.includes("webp") ? "webp" : generated.mimeType.includes("jpeg") ? "jpg" : "png";
-    const objectKey = `${userId}/${generationId}.${extension}`;
-    await env.IMAGES.put(objectKey, generated.bytes, {
-      httpMetadata: { contentType: generated.mimeType, cacheControl: "private, max-age=31536000, immutable" },
-      customMetadata: { userId, generationId, provider: config.provider },
-    });
-    const completed = await env.DB.prepare(
-      `UPDATE generations SET status = 'completed', object_key = ?, mime_type = ?, completed_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ? AND status = 'processing'`,
-    ).bind(objectKey, generated.mimeType, generationId, userId).run();
-    if (!completed.meta.changes) {
-      await env.IMAGES.delete(objectKey);
-      throw new Error("Generation could not be finalized");
-    }
-  } catch (error) {
-    await refundGeneration(env, userId, generationId, config.credits, error);
-    const publicMessage = error.message?.includes("not configured")
-      ? "That model is not available yet. Your credits were returned."
-      : "The model could not create this image. Your credits were returned.";
-    return json({ error: publicMessage }, 502);
-  }
-
-  const row = await env.DB.prepare(
-    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, created_at FROM generations WHERE id = ?",
-  ).bind(generationId).first();
-  const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
-  return json({ generation: await serializeGeneration(row, env, apiOrigin), creditBalance: user.credit_balance }, 201);
+  return Boolean(results[1]?.meta?.changes);
 }
 
-async function refundGeneration(env, userId, generationId, credits, error) {
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE users SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
+async function generateAndStore(env, details) {
+  const { generationId, userId, config, input, prompt, aspectRatio } = details;
+  const generated = await generateImage(env, { model: input.model, prompt, aspectRatio });
+  const extension = generated.mimeType.includes("webp") ? "webp" : generated.mimeType.includes("jpeg") ? "jpg" : "png";
+  const objectKey = `${userId}/${generationId}.${extension}`;
+  await env.IMAGES.put(objectKey, generated.bytes, {
+    httpMetadata: { contentType: generated.mimeType, cacheControl: "private, max-age=31536000, immutable" },
+    customMetadata: { userId, generationId, provider: config.provider },
+  });
+  const completed = await env.DB.prepare(
+    `UPDATE generations SET status = 'completed', object_key = ?, mime_type = ?, completed_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND user_id = ? AND status = 'processing'`,
+  ).bind(objectKey, generated.mimeType, generationId, userId).run();
+  if (!completed.meta.changes) {
+    await env.IMAGES.delete(objectKey);
+    throw new Error("Generation could not be finalized");
+  }
+}
+
+async function refundGeneration(env, userId, generationId, credits, chargeKind, error) {
+  const statements = chargeKind === "signup_free"
+    ? [env.DB.prepare(
+      `UPDATE users SET free_generations_remaining = free_generations_remaining + 1
        WHERE user_id = ? AND EXISTS (SELECT 1 FROM generations WHERE id = ? AND status = 'processing')`,
-    ).bind(credits, userId, generationId),
-    env.DB.prepare(
-      `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
-       SELECT ?, ?, ?, 'refund', ?, 'Automatic refund for failed generation' WHERE changes() = 1`,
-    ).bind(crypto.randomUUID(), userId, credits, `refund:${generationId}`),
-    env.DB.prepare(
-      `UPDATE generations SET status = 'failed', error_code = ?, completed_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ? AND status = 'processing'`,
-    ).bind(safeErrorCode(error), generationId, userId),
-  ]);
+    ).bind(userId, generationId)]
+    : [
+      env.DB.prepare(
+        `UPDATE users SET credit_balance = credit_balance + ?
+         WHERE user_id = ? AND EXISTS (SELECT 1 FROM generations WHERE id = ? AND status = 'processing')`,
+      ).bind(credits, userId, generationId),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
+         SELECT ?, ?, ?, 'refund', ?, 'Automatic refund for failed generation' WHERE changes() = 1`,
+      ).bind(crypto.randomUUID(), userId, credits, `refund:${generationId}`),
+    ];
+  statements.push(env.DB.prepare(
+    `UPDATE generations SET status = 'failed', error_code = ?, completed_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND user_id = ? AND status = 'processing'`,
+  ).bind(safeErrorCode(error), generationId, userId));
+  await env.DB.batch(statements);
+}
+
+async function createAnonymousGeneration(request, env, apiOrigin) {
+  const parsed = parseGeneration(await request.json());
+  if (parsed.error) return parsed.error;
+  const { input, prompt, aspectRatio, config } = parsed;
+  const rawIp = request.headers.get("cf-connecting-ip") || "unknown";
+  const ipHash = await hmacHex(env.IMAGE_SIGNING_SECRET, `anonymous:${rawIp}`);
+  const generationId = crypto.randomUUID();
+  const claim = await env.DB.prepare(
+    "INSERT OR IGNORE INTO anonymous_usage (ip_hash, generation_id) VALUES (?, ?)",
+  ).bind(ipHash, generationId).run();
+  if (!claim.meta.changes) return json({ error: "Your free image has already been used. Sign up to get 5 more generations." }, 429);
+
+  const userId = `anonymous:${generationId}`;
+  await env.DB.prepare("INSERT INTO users (user_id, free_generations_remaining) VALUES (?, 0)").bind(userId).run();
+  await env.DB.prepare(
+    `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, status)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 'anonymous_free', 'processing')`,
+  ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio).run();
+  try {
+    await generateAndStore(env, { generationId, userId, config, input, prompt, aspectRatio });
+  } catch (error) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM anonymous_usage WHERE ip_hash = ?").bind(ipHash),
+      env.DB.prepare("UPDATE generations SET status = 'failed', error_code = ? WHERE id = ?").bind(safeErrorCode(error), generationId),
+    ]);
+    return json({ error: "The model could not create this image. Please try again." }, 502);
+  }
+  const row = await env.DB.prepare(
+    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, created_at FROM generations WHERE id = ?",
+  ).bind(generationId).first();
+  return json({ generation: await serializeGeneration(row, env, apiOrigin) }, 201);
 }
 
 async function serializeGeneration(row, env, apiOrigin) {
