@@ -310,7 +310,7 @@ function Header({ balance, freeRemaining, onBuy, menuOpen, setMenuOpen, loadAcco
       </nav>
       <div className="header-actions">
         <SignedIn>
-          <button className="balance-pill" onClick={onBuy}><Coins size={15} /> {freeRemaining > 0 ? freeRemaining : balance ?? "—"} <span>{freeRemaining > 0 ? "free" : "credits"}</span></button>
+          <button className="balance-pill" onClick={onBuy}><Coins size={15} /> {freeRemaining > 0 ? `${freeRemaining} free generations left` : `${balance ?? "—"} credits`}</button>
           <UserButton />
         </SignedIn>
         <SignedOut>
