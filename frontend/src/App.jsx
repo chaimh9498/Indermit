@@ -29,7 +29,7 @@ function App() {
       <header className="site-header">
         <a className="brand" href="/" aria-label="Indermit home">
           <img src="/indermit-mark.webp" alt="" />
-          <span>INDERMIT</span>
+          <BrandWordmark />
         </a>
 
         <div className="header-actions">
@@ -120,9 +120,9 @@ function App() {
       </main>
 
       <footer>
-        <a className="brand footer-brand" href="/">
+        <a className="brand footer-brand" href="/" aria-label="Indermit home">
           <img src="/indermit-mark.webp" alt="" />
-          <span>INDERMIT</span>
+          <BrandWordmark />
         </a>
         <nav aria-label="Legal and support">
           <a href="/terms.html">Terms</a>
@@ -131,6 +131,15 @@ function App() {
         </nav>
       </footer>
     </div>
+  );
+}
+
+function BrandWordmark() {
+  return (
+    <span className="brand-wordmark" aria-hidden="true">
+      <span className="wordmark-i" />
+      <span className="wordmark-rest">NDERMIT</span>
+    </span>
   );
 }
 
