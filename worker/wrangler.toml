@@ -5,6 +5,7 @@ routes = [{ pattern = "api.indermit.com", custom_domain = true }]
 
 [vars]
 ENVIRONMENT = "production"
+FREE_GENERATIONS_ENABLED = "false"
 FRONTEND_URL = "https://indermit.com"
 CLERK_ISSUER = "https://clerk.indermit.com"
 CLERK_AUTHORIZED_PARTIES = "https://indermit.com"
