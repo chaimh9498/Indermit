@@ -8,6 +8,9 @@ export const CREDIT_BUNDLES = {
 
 export async function createCheckoutSession(env, userId, bundleId) {
   if (!env.STRIPE_SECRET_KEY) throw new Error("Payments are not configured yet");
+  if (env.PRIVATE_BETA === "true" && !env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
+    throw new Error("Private beta checkout requires Stripe test mode");
+  }
   const bundle = CREDIT_BUNDLES[bundleId];
   if (!bundle) throw new Error("Unknown credit package");
   const params = new URLSearchParams({
@@ -19,7 +22,7 @@ export async function createCheckoutSession(env, userId, bundleId) {
     "line_items[0][quantity]": "1",
     "line_items[0][price_data][currency]": "usd",
     "line_items[0][price_data][unit_amount]": String(bundle.cents),
-    "line_items[0][price_data][product_data][name]": `Indermit ${bundle.name}`,
+    "line_items[0][price_data][product_data][name]": `Indermit ${bundle.name} (beta test)`,
     "metadata[user_id]": userId,
     "metadata[bundle_id]": bundleId,
     "metadata[credits]": String(bundle.credits),

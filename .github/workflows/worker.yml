@@ -26,8 +26,8 @@ jobs:
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
       AZURE_MAI_API_KEY: ${{ secrets.AZURE_MAI_API_KEY }}
       AZURE_MAI_ENDPOINT: ${{ secrets.AZURE_MAI_ENDPOINT }}
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -84,5 +84,3 @@ jobs:
           put_secret STRIPE_WEBHOOK_SECRET "$STRIPE_WEBHOOK_SECRET"
       - name: Verify production health
         run: curl --fail --retry 10 --retry-delay 6 --retry-all-errors https://api.indermit.com/v1/health
-
-# OpenRouter secret deployment 2026-10-07 retry 2

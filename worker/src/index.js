@@ -1,7 +1,7 @@
 import { authenticate, AuthError } from "./auth.js";
 import { generateImage, MODEL_CONFIG } from "./providers.js";
 import { createCheckoutSession, verifyStripeSignature } from "./stripe.js";
-import { constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode } from "./utils.js";
+import { constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode, sha256Hex } from "./utils.js";
 
 export default {
   async fetch(request, env, context) {
@@ -13,7 +13,7 @@ export default {
       let response;
 
       if (request.method === "GET" && url.pathname === "/v1/health") {
-        response = json({ ok: true, service: "indermit-api" });
+        response = json({ ok: true, service: "indermit-api", privateBeta: env.PRIVATE_BETA === "true" });
       } else if (request.method === "POST" && url.pathname === "/v1/webhooks/stripe") {
         response = await handleStripeWebhook(request, env);
       } else if (request.method === "GET" && url.pathname.startsWith("/v1/images/")) {
@@ -39,6 +39,32 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   const url = new URL(request.url);
   await ensureUser(env, userId);
 
+  if (request.method === "POST" && url.pathname === "/v1/beta/enroll") {
+    return enrollBetaMember(request, env, userId);
+  }
+
+  const member = await getBetaMember(env, userId);
+  if (request.method === "GET" && url.pathname === "/v1/beta/me") {
+    return json({
+      enrolled: Boolean(member),
+      role: member?.role || null,
+      stripeTestReady: Boolean(env.STRIPE_SECRET_KEY?.startsWith("sk_test_") && env.STRIPE_WEBHOOK_SECRET),
+    });
+  }
+
+  if (env.PRIVATE_BETA === "true" && !member) {
+    return json({ error: "A private beta invitation is required." }, 403);
+  }
+
+  if (member) {
+    await env.DB.prepare("UPDATE beta_members SET last_seen_at = CURRENT_TIMESTAMP WHERE user_id = ?").bind(userId).run();
+  }
+
+  if (url.pathname.startsWith("/v1/admin/")) {
+    if (member?.role !== "admin") return json({ error: "Owner access required." }, 403);
+    return handleAdmin(request, env, userId, url);
+  }
+
   if (request.method === "GET" && url.pathname === "/v1/account") {
     const user = await env.DB.prepare(
       "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
@@ -46,6 +72,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
     return json({
       creditBalance: user?.credit_balance || 0,
       freeGenerationsRemaining: env.FREE_GENERATIONS_ENABLED === "true" ? user?.free_generations_remaining || 0 : 0,
+      role: member?.role || null,
     });
   }
 
@@ -70,6 +97,104 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   }
 
   return json({ error: "Not found" }, 404);
+}
+
+async function enrollBetaMember(request, env, userId) {
+  if (env.PRIVATE_BETA !== "true") return json({ enrolled: true, role: "tester" });
+  const { code = "" } = await request.json();
+  if (typeof code !== "string" || code.length < 12 || code.length > 200) {
+    return json({ error: "Enter a valid beta access key." }, 400);
+  }
+  const submittedHash = await sha256Hex(code.trim());
+  const isAdmin = Boolean(env.BETA_ADMIN_HASH) && constantTimeEqual(submittedHash, env.BETA_ADMIN_HASH);
+  const isTester = Boolean(env.BETA_ACCESS_HASH) && constantTimeEqual(submittedHash, env.BETA_ACCESS_HASH);
+  if (!isAdmin && !isTester) return json({ error: "That beta access key is not valid." }, 403);
+
+  const role = isAdmin ? "admin" : "tester";
+  await env.DB.prepare(
+    `INSERT INTO beta_members (user_id, role) VALUES (?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       role = CASE WHEN excluded.role = 'admin' THEN 'admin' ELSE beta_members.role END,
+       last_seen_at = CURRENT_TIMESTAMP`,
+  ).bind(userId, role).run();
+  const member = await getBetaMember(env, userId);
+  return json({ enrolled: true, role: member.role });
+}
+
+async function getBetaMember(env, userId) {
+  return env.DB.prepare("SELECT role, joined_at, last_seen_at FROM beta_members WHERE user_id = ?").bind(userId).first();
+}
+
+async function handleAdmin(request, env, _userId, url) {
+  if (request.method === "GET" && url.pathname === "/v1/admin/status") {
+    const [users, generations, completed, failed, recent] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM generations").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'completed'").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'failed'").first(),
+      env.DB.prepare(
+        `SELECT id, user_id, provider, model, status, credit_cost, error_code, created_at, completed_at
+         FROM generations ORDER BY created_at DESC LIMIT 40`,
+      ).all(),
+    ]);
+    return json({
+      summary: {
+        betaMembers: users?.count || 0,
+        generations: generations?.count || 0,
+        completed: completed?.count || 0,
+        failed: failed?.count || 0,
+      },
+      models: [
+        { id: "auto", name: "Auto", provider: "Indermit", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG.auto.credits },
+        { id: "google-nano-banana", name: "Nano Banana 2", provider: "Google", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG["google-nano-banana"].credits },
+        { id: "openai-sunburst", name: "Image generation", provider: "OpenAI", enabled: false, credits: MODEL_CONFIG["openai-sunburst"].credits },
+        { id: "xai-imagine", name: "Imagine", provider: "xAI", enabled: false, credits: MODEL_CONFIG["xai-imagine"].credits },
+      ],
+      stripe: {
+        mode: env.STRIPE_SECRET_KEY?.startsWith("sk_test_") ? "test" : "not configured",
+        webhookReady: Boolean(env.STRIPE_WEBHOOK_SECRET),
+      },
+      recentGenerations: recent.results.map((item) => ({
+        ...item,
+        user_id: maskUserId(item.user_id),
+      })),
+    });
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/admin/members") {
+    const { results } = await env.DB.prepare(
+      `SELECT b.user_id, b.role, b.joined_at, b.last_seen_at, u.credit_balance
+       FROM beta_members b JOIN users u ON u.user_id = b.user_id
+       ORDER BY b.joined_at DESC LIMIT 100`,
+    ).all();
+    return json({ members: results });
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/admin/credits") {
+    const { userId, amount } = await request.json();
+    const parsedAmount = Number(amount);
+    if (typeof userId !== "string" || !Number.isInteger(parsedAmount) || parsedAmount < -10000 || parsedAmount > 10000 || parsedAmount === 0) {
+      return json({ error: "Choose a member and enter a whole-number adjustment." }, 400);
+    }
+    const result = await env.DB.prepare(
+      `UPDATE users SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND credit_balance + ? >= 0
+       AND EXISTS (SELECT 1 FROM beta_members WHERE beta_members.user_id = users.user_id)`,
+    ).bind(parsedAmount, userId, parsedAmount).run();
+    if (!result.meta.changes) return json({ error: "Member not found or the adjustment would make the balance negative." }, 400);
+    await env.DB.prepare(
+      `INSERT INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
+       VALUES (?, ?, ?, 'adjustment', ?, 'Private beta owner adjustment')`,
+    ).bind(crypto.randomUUID(), userId, parsedAmount, `admin:${crypto.randomUUID()}`).run();
+    const account = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
+    return json({ creditBalance: account.credit_balance });
+  }
+
+  return json({ error: "Not found" }, 404);
+}
+
+function maskUserId(userId = "") {
+  return userId.length > 10 ? `${userId.slice(0, 6)}…${userId.slice(-4)}` : "beta-user";
 }
 
 async function ensureUser(env, userId) {

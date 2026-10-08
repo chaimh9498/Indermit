@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { constantTimeEqual, hmacHex } from "../src/utils.js";
-import { verifyStripeSignature } from "../src/stripe.js";
+import { createCheckoutSession, verifyStripeSignature } from "../src/stripe.js";
 
 test("constantTimeEqual compares complete strings", () => {
   assert.equal(constantTimeEqual("abc123", "abc123"), true);
@@ -24,4 +24,11 @@ test("Stripe signatures reject stale events", async () => {
   const secret = "whsec_test_secret";
   const signature = await hmacHex(secret, `${timestamp}.${body}`);
   assert.equal(await verifyStripeSignature(body, `t=${timestamp},v1=${signature}`, secret), false);
+});
+
+test("private beta refuses a live Stripe key", async () => {
+  await assert.rejects(
+    createCheckoutSession({ PRIVATE_BETA: "true", STRIPE_SECRET_KEY: "sk_live_do_not_use" }, "user_123", "starter"),
+    /requires Stripe test mode/,
+  );
 });
