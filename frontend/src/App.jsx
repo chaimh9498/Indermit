@@ -201,8 +201,8 @@ function App() {
           </div>
           <aside className="launch-panel">
             <span className="launch-label live"><span /> GEMINI IS LIVE</span>
-            <h2>Try it out.<br /><span>Create your first image free.</span></h2>
-            <p>Create an account to unlock 5 free image generations with Gemini during the Indermit beta.</p>
+            <h2>Create an account.<br /><span>Get 5 Gemini generations free.</span></h2>
+            <p>Generate five images with Gemini during the Indermit beta, then purchase credits whenever you want to continue.</p>
             <div className="live-model">
               <ProviderMark provider="Google" />
               <div><strong>Gemini · Nano Banana 2 Lite</strong><small>Available now · 2 credits</small></div>
