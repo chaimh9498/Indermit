@@ -20,7 +20,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { anonymousApiRequest, apiRequest } from "./api";
+import { apiRequest } from "./api";
 
 const MODELS = [
   {
@@ -84,7 +84,6 @@ function App() {
   const [message, setMessage] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [anonymousUsed, setAnonymousUsed] = useState(false);
   const [view, setView] = useState(window.location.hash === "#my-images" ? "images" : "create");
 
   const selectedAspect = useMemo(
@@ -144,13 +143,11 @@ function App() {
         method: "POST",
         body: JSON.stringify({ model: model.id, prompt: prompt.trim(), aspectRatio: aspect }),
       };
-      const result = isSignedIn
-        ? await apiRequest("/v1/generations", getToken, options)
-        : await anonymousApiRequest("/v1/anonymous/generations", options);
+      if (!isSignedIn) throw new Error("Create an account to generate images.");
+      const result = await apiRequest("/v1/generations", getToken, options);
       if (typeof result.creditBalance === "number") setBalance(result.creditBalance);
       if (typeof result.freeGenerationsRemaining === "number") setFreeRemaining(result.freeGenerationsRemaining);
       setHistory((current) => [result.generation, ...current]);
-      if (!isSignedIn) setAnonymousUsed(true);
     } catch (error) {
       setMessage(error.message);
       if (error.message.toLowerCase().includes("credit")) setBuyOpen(true);
@@ -205,7 +202,7 @@ function App() {
           <aside className="launch-panel">
             <span className="launch-label live"><span /> GEMINI IS LIVE</span>
             <h2>Try it out.<br /><span>Create your first image free.</span></h2>
-            <p>No account is required for your first image. Create an account afterward to unlock 5 additional free generations.</p>
+            <p>Create an account to unlock 5 free image generations with Gemini during the Indermit beta.</p>
             <div className="live-model">
               <ProviderMark provider="Google" />
               <div><strong>Gemini · Nano Banana 2 Lite</strong><small>Available now · 2 credits</small></div>
@@ -217,7 +214,7 @@ function App() {
               <strong>𝕏 xAI</strong>
             </div>
             <SignedOut>
-              <SignUpButton mode="modal"><button className="launch-cta">Create account · Get 5 free generations</button></SignUpButton>
+              <SignUpButton mode="modal"><button className="launch-cta">Create account · Get 5 free Gemini generations</button></SignUpButton>
             </SignedOut>
             <SignedIn>
               <span className="account-ready"><Check size={16} /> Your account is ready</span>
@@ -307,19 +304,16 @@ function App() {
                 </button>
               </SignedIn>
               <SignedOut>
-                <button className="generate-button" onClick={generate} disabled={!prompt.trim() || loading || anonymousUsed}>
-                  {loading ? <LoaderCircle className="spin" size={18} /> : <WandSparkles size={18} />}
-                  {loading ? "Creating…" : anonymousUsed ? "Free image used" : "Generate your free image"}
-                </button>
+                <SignUpButton mode="modal">
+                  <button className="generate-button">
+                    <WandSparkles size={18} /> Create account to generate
+                  </button>
+                </SignUpButton>
               </SignedOut>
             </div>
           </div>
 
           {message && <div className="notice">{message}</div>}
-          {anonymousUsed && <div className="signup-reward">
-            <span>Your image is ready. Sign up for 5 more generations with any model.</span>
-            <SignUpButton mode="modal"><button>Get 5 free generations</button></SignUpButton>
-          </div>}
           <p className="keyboard-hint">{selectedAspect.label} output · Press ⌘ Enter to generate</p>
         </section>
 
