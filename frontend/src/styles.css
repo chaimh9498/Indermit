@@ -76,8 +76,8 @@ a { color: inherit; text-decoration: none; }
   z-index: 5;
 }
 .brand { display: inline-flex; align-items: center; }
-.brand-wordmark { height: 23px; display: inline-flex; align-items: center; gap: 1px; }
-.wordmark-middle, .wordmark-t { font: 800 18px/1 Manrope, sans-serif; letter-spacing: -.035em; }
+.brand-wordmark { height: 29px; display: inline-flex; align-items: center; gap: 1px; }
+.wordmark-middle, .wordmark-t { font: 800 24px/1 Manrope, sans-serif; letter-spacing: -.035em; }
 .wordmark-middle { margin-right: -2px; background: linear-gradient(90deg, #f7fbff 0%, #f1fcff 55%, #79e4ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .wordmark-t { color: #347fff; }
 .header-actions { display: flex; align-items: center; gap: 10px; }

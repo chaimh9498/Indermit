@@ -5,7 +5,7 @@ import {
   SignUpButton,
   UserButton,
 } from "@clerk/clerk-react";
-import { ArrowUpRight, ChevronDown, LockKeyhole, Sparkles } from "lucide-react";
+import { ChevronDown, LockKeyhole, Sparkles } from "lucide-react";
 
 const MODELS = [
   "Auto · Indermit selects the best model",
@@ -57,21 +57,6 @@ function App() {
               needing to handle separate apps, subscriptions, or accounts.
             </p>
 
-            <div className="hero-actions">
-              <SignedOut>
-                <SignUpButton mode="modal">
-                  <button className="button button-primary button-large">
-                    Create your Indermit account <ArrowUpRight size={18} />
-                  </button>
-                </SignUpButton>
-              </SignedOut>
-              <SignedIn>
-                <div className="signed-in-message">
-                  <span className="check">✓</span>
-                  Your account is ready for the beta rollout.
-                </div>
-              </SignedIn>
-            </div>
           </div>
 
         </section>
