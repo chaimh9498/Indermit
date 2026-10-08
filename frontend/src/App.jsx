@@ -130,6 +130,9 @@ function App() {
     if (params.get("payment") === "success") {
       setMessage("Payment received. Your credits will appear in a moment.");
       window.history.replaceState({}, "", window.location.pathname);
+    } else if (params.get("payment") === "cancelled") {
+      setMessage("Checkout cancelled. You were not charged.");
+      window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
