@@ -147,7 +147,7 @@ async function handleAdmin(request, env, _userId, url) {
       },
       models: [
         { id: "auto", name: "Auto", provider: "Indermit", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG.auto.credits },
-        { id: "google-nano-banana", name: "Nano Banana 2", provider: "Google", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG["google-nano-banana"].credits },
+        { id: "google-nano-banana", name: "Nano Banana 2 Lite", provider: "Google", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG["google-nano-banana"].credits },
         { id: "openai-sunburst", name: "Image generation", provider: "OpenAI", enabled: false, credits: MODEL_CONFIG["openai-sunburst"].credits },
         { id: "xai-imagine", name: "Imagine", provider: "xAI", enabled: false, credits: MODEL_CONFIG["xai-imagine"].credits },
       ],

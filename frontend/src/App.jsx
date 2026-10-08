@@ -5,7 +5,7 @@ import { apiRequest } from "./api";
 
 const MODELS = [
   { id: "auto", name: "Auto", provider: "Indermit", credits: 2, enabled: true },
-  { id: "google-nano-banana", name: "Nano Banana 2", provider: "Google", credits: 2, enabled: true },
+  { id: "google-nano-banana", name: "Nano Banana 2 Lite", provider: "Google", credits: 2, enabled: true },
   { id: "openai-sunburst", name: "Image generation", provider: "OpenAI", credits: 30, enabled: false },
   { id: "xai-imagine", name: "Imagine", provider: "xAI", credits: 15, enabled: false },
 ];
@@ -102,6 +102,8 @@ function Studio({ getToken, beta }) {
   const [model, setModel] = useState("auto");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [busy, setBusy] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(null);
+  const [latestGeneration, setLatestGeneration] = useState(null);
   const [message, setMessage] = useState("");
   const [admin, setAdmin] = useState(null);
   const [members, setMembers] = useState([]);
@@ -119,11 +121,18 @@ function Studio({ getToken, beta }) {
   async function generate(event) {
     event.preventDefault();
     if (!prompt.trim()) return setMessage("Describe the image you want to create.");
-    setBusy(true); setMessage("");
+    const submittedPrompt = prompt.trim();
+    setBusy(true); setMessage(""); setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, status: "creating" });
     try {
-      const result = await apiRequest("/v1/generations", getToken, { method: "POST", body: JSON.stringify({ prompt, model, aspectRatio }) });
-      setAccount((current) => ({ ...current, creditBalance: result.creditBalance })); setImages((current) => [result.generation, ...current]); setPrompt(""); setView("images");
-    } catch (error) { setMessage(error.message); } finally { setBusy(false); }
+      const result = await apiRequest("/v1/generations", getToken, { method: "POST", body: JSON.stringify({ prompt: submittedPrompt, model, aspectRatio }) });
+      setAccount((current) => ({ ...current, creditBalance: result.creditBalance }));
+      setImages((current) => [result.generation, ...current]);
+      setLatestGeneration(result.generation);
+      setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, status: "loading", imageUrl: result.generation.imageUrl });
+      setPrompt("");
+    } catch (error) {
+      setGenerationProgress(null); setMessage(error.message);
+    } finally { setBusy(false); }
   }
 
   async function checkout(bundleId) {
@@ -146,16 +155,31 @@ function Studio({ getToken, beta }) {
     {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); loadAdmin(); }}><Gauge size={15} /> Owner</button>}
   </nav><div className="account-cluster"><span><strong>{account.creditBalance}</strong> credits</span><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
-    {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PRIVATE BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 is available now. Other models will be enabled as they are connected and tested.</p></div>
+    {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PRIVATE BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite is available now. Other models will be enabled as they are connected and tested.</p></div>
       <form className="live-composer" onSubmit={generate}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder="Describe the image you want to create…" /><div className="composer-controls">
         <label className="live-select"><span><small>Model</small><strong>{activeModel.provider} · {activeModel.name}</strong></span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.provider} · {item.name}{!item.enabled ? " — Coming soon" : ` — ${item.credits} credits`}</option>)}</select><ChevronDown size={15} /></label>
         <label className="ratio-select"><span>Ratio</span><select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}><option>1:1</option><option>16:9</option><option>9:16</option></select></label>
         <button className="generate-live" disabled={busy || !prompt.trim()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={17} />} Generate · {activeModel.credits} credits</button>
-      </div></form></section>}
+      </div></form>
+      {latestGeneration && <article className="inline-result" key={latestGeneration.id}>
+        <div className="inline-result-image"><img src={latestGeneration.imageUrl} alt={latestGeneration.prompt} /></div>
+        <div className="inline-result-details"><span>CREATED WITH {latestGeneration.provider.toUpperCase()}</span><h2>Your image is ready</h2><p>{latestGeneration.prompt}</p><div><a href={latestGeneration.downloadUrl}>Download image</a><button onClick={() => setLatestGeneration(null)}>Create another</button></div></div>
+      </article>}
+    </section>}
     {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations will appear here." />}</section>}
     {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PRIVATE BETA CHECKOUT</span><h1>Buy Indermit credits</h1><p>These are real payments processed securely by Stripe. Credits are added to your account after payment succeeds.</p></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure checkout is connected" : "Checkout is being configured"}</strong><p>{beta.stripeReady ? "Only approved private-beta members can access these packages. Failed generations are automatically refunded to your credit balance." : "Purchasing stays disabled until the live Stripe key and webhook are both available."}</p></div></div><div className="bundle-grid">{BUNDLES.map((bundle) => <article key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits</p><button disabled={!beta.stripeReady || busy} onClick={() => checkout(bundle.id)}>Buy with Stripe</button></article>)}</div></section>}
     {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={loadAdmin} />}
-  </main></div>;
+  </main>
+  {generationProgress && <div className="generation-overlay" role="dialog" aria-modal="true" aria-label="Creating your image"><div className="generation-progress-card">
+    <div className="generation-visual"><div className="generation-glow" /><div className="generation-frame"><Sparkles size={31} /></div><div className="generation-ring"><span /></div></div>
+    <span className="section-label">{generationProgress.status === "creating" ? "GENERATING" : "FINALIZING"}</span>
+    <h2>{generationProgress.status === "creating" ? "Creating your image…" : "Your image is ready…"}</h2>
+    <p>{generationProgress.status === "creating" ? `${generationProgress.model} is turning your prompt into an image.` : "Preparing the finished image in your studio."}</p>
+    <div className="generation-prompt">“{generationProgress.prompt}”</div>
+    <div className="generation-fade-bar"><span /></div>
+    {generationProgress.imageUrl && <img className="generation-preloader" src={generationProgress.imageUrl} alt="" onLoad={() => setGenerationProgress(null)} onError={() => { setGenerationProgress(null); setMessage("The image was created, but the preview could not load. You can find it in My Images."); }} />}
+  </div></div>}
+  </div>;
 }
 
 function AdminView({ data, members, onAdjust, onRefresh }) {
