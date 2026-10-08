@@ -28,7 +28,6 @@ function App() {
 
       <header className="site-header">
         <a className="brand" href="/" aria-label="Indermit home">
-          <img src="/indermit-mark.webp" alt="" />
           <BrandWordmark />
         </a>
 
@@ -110,7 +109,6 @@ function App() {
 
       <footer>
         <a className="brand footer-brand" href="/" aria-label="Indermit home">
-          <img src="/indermit-mark.webp" alt="" />
           <BrandWordmark />
         </a>
         <nav aria-label="Legal and support">
