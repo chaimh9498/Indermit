@@ -18,8 +18,6 @@ export default {
         response = await handleStripeWebhook(request, env);
       } else if (request.method === "GET" && url.pathname.startsWith("/v1/images/")) {
         response = await serveImage(request, env);
-      } else if (request.method === "POST" && url.pathname === "/v1/anonymous/generations") {
-        response = await createAnonymousGeneration(request, env, url.origin);
       } else {
         const session = await authenticate(request, env);
         response = await handleAuthenticated(request, env, context, session);
@@ -88,7 +86,8 @@ async function createGeneration(request, env, userId, apiOrigin) {
   const account = await env.DB.prepare(
     "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
   ).bind(userId).first();
-  const chargeKind = account.free_generations_remaining > 0 ? "signup_free" : "credits";
+  const freeEligibleModel = input.model === "auto" || input.model === "google-nano-banana";
+  const chargeKind = freeEligibleModel && account.free_generations_remaining > 0 ? "signup_free" : "credits";
   const creditCost = chargeKind === "signup_free" ? 0 : config.credits;
   const reserved = chargeKind === "signup_free"
     ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio })
@@ -203,39 +202,6 @@ async function refundGeneration(env, userId, generationId, credits, chargeKind, 
      WHERE id = ? AND user_id = ? AND status = 'processing'`,
   ).bind(safeErrorCode(error), generationId, userId));
   await env.DB.batch(statements);
-}
-
-async function createAnonymousGeneration(request, env, apiOrigin) {
-  const parsed = parseGeneration(await request.json());
-  if (parsed.error) return parsed.error;
-  const { input, prompt, aspectRatio, config } = parsed;
-  const rawIp = request.headers.get("cf-connecting-ip") || "unknown";
-  const ipHash = await hmacHex(env.IMAGE_SIGNING_SECRET, `anonymous:${rawIp}`);
-  const generationId = crypto.randomUUID();
-  const claim = await env.DB.prepare(
-    "INSERT OR IGNORE INTO anonymous_usage (ip_hash, generation_id) VALUES (?, ?)",
-  ).bind(ipHash, generationId).run();
-  if (!claim.meta.changes) return json({ error: "Your free image has already been used. Sign up to get 5 more generations." }, 429);
-
-  const userId = `anonymous:${generationId}`;
-  await env.DB.prepare("INSERT INTO users (user_id, free_generations_remaining) VALUES (?, 0)").bind(userId).run();
-  await env.DB.prepare(
-    `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, status)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 'anonymous_free', 'processing')`,
-  ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio).run();
-  try {
-    await generateAndStore(env, { generationId, userId, config, input, prompt, aspectRatio });
-  } catch (error) {
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM anonymous_usage WHERE ip_hash = ?").bind(ipHash),
-      env.DB.prepare("UPDATE generations SET status = 'failed', error_code = ? WHERE id = ?").bind(safeErrorCode(error), generationId),
-    ]);
-    return json({ error: "The model could not create this image. Please try again." }, 502);
-  }
-  const row = await env.DB.prepare(
-    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, created_at FROM generations WHERE id = ?",
-  ).bind(generationId).first();
-  return json({ generation: await serializeGeneration(row, env, apiOrigin) }, 201);
 }
 
 async function serializeGeneration(row, env, apiOrigin) {
