@@ -1,8 +1,8 @@
 import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
-  auto: { provider: "Microsoft", credits: 12 },
-  "microsoft-mai": { provider: "Microsoft", credits: 12 },
+  auto: { provider: "Microsoft", credits: 2 },
+  "microsoft-mai": { provider: "Microsoft", credits: 2 },
   "openai-sunburst": { provider: "OpenAI", credits: 30 },
   "google-nano-banana": { provider: "Google", credits: 20 },
   "xai-imagine": { provider: "xAI", credits: 15 },
