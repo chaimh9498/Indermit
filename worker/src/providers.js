@@ -1,8 +1,8 @@
 import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
-  auto: { provider: "OpenRouter", credits: 3 },
-  "openrouter-muse": { provider: "Meta via OpenRouter", credits: 3 },
+  auto: { provider: "OpenRouter", credits: 12 },
+  "openrouter-microsoft": { provider: "Microsoft via OpenRouter", credits: 12 },
   "openai-sunburst": { provider: "OpenAI", credits: 30 },
   "google-nano-banana": { provider: "Google", credits: 20 },
   "xai-imagine": { provider: "xAI", credits: 15 },
@@ -11,14 +11,14 @@ export const MODEL_CONFIG = {
 const OPENAI_SIZES = { "1:1": "1024x1024", "16:9": "1536x864", "9:16": "864x1536" };
 
 export async function generateImage(env, input) {
-  if (input.model === "auto" || input.model === "openrouter-muse") return generateOpenRouterMuse(env, input);
+  if (input.model === "auto" || input.model === "openrouter-microsoft") return generateOpenRouterMicrosoft(env, input);
   if (input.model === "openai-sunburst") return generateOpenAI(env, input);
   if (input.model === "google-nano-banana") return generateGoogle(env, input);
   if (input.model === "xai-imagine") return generateXai(env, input);
   throw new Error("Unsupported model");
 }
 
-async function generateOpenRouterMuse(env, { prompt, aspectRatio }) {
+async function generateOpenRouterMicrosoft(env, { prompt, aspectRatio }) {
   if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured");
   const response = await fetch("https://openrouter.ai/api/v1/images", {
     method: "POST",
@@ -29,7 +29,7 @@ async function generateOpenRouterMuse(env, { prompt, aspectRatio }) {
       "X-Title": "Indermit",
     },
     body: JSON.stringify({
-      model: env.OPENROUTER_MUSE_MODEL || "meta/muse-image",
+      model: env.OPENROUTER_MICROSOFT_MODEL || "microsoft/mai-image-2.5",
       prompt,
       aspect_ratio: aspectRatio,
     }),
