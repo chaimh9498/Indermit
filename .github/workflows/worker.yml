@@ -83,4 +83,4 @@ jobs:
       - name: Verify production health
         run: curl --fail --retry 10 --retry-delay 6 --retry-all-errors https://api.indermit.com/v1/health
 
-# OpenRouter secret deployment 2026-10-07
+# OpenRouter secret deployment 2026-10-07 retry 2
