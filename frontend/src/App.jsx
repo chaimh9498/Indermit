@@ -8,8 +8,8 @@ import {
   useAuth,
 } from "@clerk/clerk-react";
 import {
-  ArrowRight,
   Check,
+  ChevronDown,
   Coins,
   Download,
   Image as ImageIcon,
@@ -25,11 +25,11 @@ import { anonymousApiRequest, apiRequest } from "./api";
 const MODELS = [
   {
     id: "auto", provider: "Auto", name: "Best value",
-    description: "Indermit selects Microsoft MAI Image 2.5 through Microsoft Foundry.",
+    description: "Indermit selects the best available model for your request.",
     credits: 2, accent: "violet", badge: "Auto",
   },
   {
-    id: "microsoft-mai", provider: "Microsoft", name: "MAI Image 2.5",
+    id: "microsoft-mai", provider: "Microsoft", name: "MAI Image 2.6",
     description: "Direct Microsoft Foundry image generation for commercial creative work.",
     credits: 2, accent: "amber", badge: "New",
   },
@@ -184,19 +184,15 @@ function App() {
         <section className="studio" id="create">
           <div className="studio-heading">
             <div>
-              <span className="section-kicker">01 · MODEL</span>
-              <h2>Choose your creative engine</h2>
+              <span className="section-kicker">MODEL CATALOG</span>
+              <h2>Every leading image model, one place</h2>
             </div>
-            <span className="tiny-note">Switch anytime</span>
+            <span className="tiny-note">Choose your model inside the prompt box</span>
           </div>
 
-          <div className="model-grid">
+          <div className="model-grid" aria-label="Available image models">
             {MODELS.map((item) => (
-              <button
-                className={`model-card ${item.accent} ${model.id === item.id ? "selected" : ""}`}
-                key={item.id}
-                onClick={() => setModel(item)}
-              >
+              <article className={`model-card ${item.accent}`} key={item.id}>
                 <div className="model-top">
                   <ProviderMark provider={item.provider} />
                   <span className="model-badge">{item.badge}</span>
@@ -206,15 +202,15 @@ function App() {
                 <p className="model-description">{item.description}</p>
                 <div className="model-bottom">
                   <span><Coins size={14} /> {item.credits} credits</span>
-                  <span className="select-check">{model.id === item.id ? <Check size={15} /> : <ArrowRight size={15} />}</span>
+                  <span>Available in Studio</span>
                 </div>
-              </button>
+              </article>
             ))}
           </div>
 
           <div className="composer">
             <div className="composer-meta">
-              <span className="section-kicker">02 · PROMPT</span>
+              <span className="section-kicker">CREATE</span>
               <span>{prompt.length}/1200</span>
             </div>
             <textarea
@@ -227,17 +223,38 @@ function App() {
               }}
             />
             <div className="composer-footer">
-              <div className="aspect-picker">
-                {ASPECTS.map((item) => (
-                  <button
-                    key={item.value}
-                    className={aspect === item.value ? "active" : ""}
-                    onClick={() => setAspect(item.value)}
-                    title={item.label}
+              <div className="composer-controls">
+                <label className="model-select">
+                  <ProviderMark provider={model.provider} />
+                  <span className="model-select-copy">
+                    <small>Model</small>
+                    <strong>{model.provider} · {model.name}</strong>
+                  </span>
+                  <select
+                    aria-label="Choose image model"
+                    value={model.id}
+                    onChange={(event) => setModel(MODELS.find((item) => item.id === event.target.value) || MODELS[0])}
                   >
-                    <span className={`aspect-icon ${item.shape}`} /> {item.value}
-                  </button>
-                ))}
+                    {MODELS.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.provider} · {item.name} · {item.credits} credits
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={16} />
+                </label>
+                <div className="aspect-picker">
+                  {ASPECTS.map((item) => (
+                    <button
+                      key={item.value}
+                      className={aspect === item.value ? "active" : ""}
+                      onClick={() => setAspect(item.value)}
+                      title={item.label}
+                    >
+                      <span className={`aspect-icon ${item.shape}`} /> {item.value}
+                    </button>
+                  ))}
+                </div>
               </div>
               <SignedIn>
                 <button className="generate-button" onClick={generate} disabled={!prompt.trim() || loading}>
