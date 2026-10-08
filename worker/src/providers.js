@@ -1,10 +1,10 @@
 import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
-  auto: { provider: "Microsoft", credits: 2 },
+  auto: { provider: "Google", credits: 2 },
   "microsoft-mai": { provider: "Microsoft", credits: 2 },
   "openai-sunburst": { provider: "OpenAI", credits: 30 },
-  "google-nano-banana": { provider: "Google", credits: 20 },
+  "google-nano-banana": { provider: "Google", credits: 2 },
   "xai-imagine": { provider: "xAI", credits: 15 },
 };
 
@@ -12,9 +12,9 @@ const OPENAI_SIZES = { "1:1": "1024x1024", "16:9": "1536x864", "9:16": "864x1536
 const AZURE_MAI_SIZES = { "1:1": [1024, 1024], "16:9": [1360, 768], "9:16": [768, 1360] };
 
 export async function generateImage(env, input) {
-  if (input.model === "auto" || input.model === "microsoft-mai") return generateMicrosoftMai(env, input);
+  if (input.model === "auto" || input.model === "google-nano-banana") return generateGoogle(env, input);
+  if (input.model === "microsoft-mai") return generateMicrosoftMai(env, input);
   if (input.model === "openai-sunburst") return generateOpenAI(env, input);
-  if (input.model === "google-nano-banana") return generateGoogle(env, input);
   if (input.model === "xai-imagine") return generateXai(env, input);
   throw new Error("Unsupported model");
 }
@@ -71,7 +71,7 @@ async function generateGoogle(env, { prompt, aspectRatio }) {
     method: "POST",
     headers: { "x-goog-api-key": env.GOOGLE_API_KEY, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: env.GOOGLE_IMAGE_MODEL || "gemini-3.1-flash-image",
+      model: env.GOOGLE_IMAGE_MODEL || "gemini-3.1-flash-lite-image",
       input: prompt,
       response_format: { type: "image", mime_type: "image/jpeg", aspect_ratio: aspectRatio, image_size: "1K" },
     }),
