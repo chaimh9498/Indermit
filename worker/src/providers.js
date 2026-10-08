@@ -2,9 +2,9 @@ import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
   auto: { provider: "Google", credits: 2 },
-  "openai-sunburst": { provider: "OpenAI", credits: 30 },
+  "openai-sunburst": { provider: "OpenAI", credits: 1 },
   "google-nano-banana": { provider: "Google", credits: 2 },
-  "xai-imagine": { provider: "xAI", credits: 15 },
+  "xai-imagine": { provider: "xAI", credits: 2 },
 };
 
 const OPENAI_SIZES = { "1:1": "1024x1024", "16:9": "1536x864", "9:16": "864x1536" };
@@ -54,6 +54,7 @@ async function generateOpenAI(env, { prompt, aspectRatio }) {
       size: OPENAI_SIZES[aspectRatio],
       quality: "low",
       output_format: "webp",
+      output_compression: 90
     }),
   });
   const result = await response.json();
