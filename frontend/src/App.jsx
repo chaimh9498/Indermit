@@ -83,7 +83,6 @@ function App() {
             <div>
               <span className="section-label">INDERMIT STUDIO</span>
             </div>
-            <span className="paused-badge"><LockKeyhole size={13} /> Generation paused</span>
           </div>
 
           <div className="composer">
