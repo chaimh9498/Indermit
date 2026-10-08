@@ -174,6 +174,7 @@ function App() {
 
   return (
     <div className="app-shell">
+      <div className="beta-banner"><strong>INDERMIT IS IN BETA</strong><span>Features and models are improving quickly.</span></div>
       <div className="noise" />
       <Header
         balance={balance}
