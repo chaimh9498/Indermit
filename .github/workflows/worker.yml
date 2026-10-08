@@ -26,8 +26,8 @@ jobs:
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
       AZURE_MAI_API_KEY: ${{ secrets.AZURE_MAI_API_KEY }}
       AZURE_MAI_ENDPOINT: ${{ secrets.AZURE_MAI_ENDPOINT }}
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
-      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -48,7 +48,8 @@ async function handleAuthenticated(request, env, _context, { userId }) {
     return json({
       enrolled: Boolean(member),
       role: member?.role || null,
-      stripeTestReady: Boolean(env.STRIPE_SECRET_KEY?.startsWith("sk_test_") && env.STRIPE_WEBHOOK_SECRET),
+      stripeReady: isStripeReady(env),
+      stripeMode: env.STRIPE_MODE || "test",
     });
   }
 
@@ -151,7 +152,7 @@ async function handleAdmin(request, env, _userId, url) {
         { id: "xai-imagine", name: "Imagine", provider: "xAI", enabled: false, credits: MODEL_CONFIG["xai-imagine"].credits },
       ],
       stripe: {
-        mode: env.STRIPE_SECRET_KEY?.startsWith("sk_test_") ? "test" : "not configured",
+        mode: isStripeReady(env) ? env.STRIPE_MODE || "test" : "not configured",
         webhookReady: Boolean(env.STRIPE_WEBHOOK_SECRET),
       },
       recentGenerations: recent.results.map((item) => ({
@@ -373,6 +374,9 @@ async function handleStripeWebhook(request, env) {
     return json({ error: "Invalid webhook signature" }, 400);
   }
   const event = JSON.parse(rawBody);
+  if ((env.STRIPE_MODE === "live") !== (event.livemode === true)) {
+    return json({ error: "Stripe event mode does not match this deployment" }, 400);
+  }
   const paymentEvents = ["checkout.session.completed", "checkout.session.async_payment_succeeded"];
   if (!paymentEvents.includes(event.type)) return json({ received: true });
   const session = event.data?.object;
@@ -397,4 +401,10 @@ async function handleStripeWebhook(request, env) {
     ).bind(crypto.randomUUID(), userId, credits, `stripe:${event.id}`),
   ]);
   return json({ received: true });
+}
+
+function isStripeReady(env) {
+  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) return false;
+  const prefixes = env.STRIPE_MODE === "live" ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
+  return prefixes.some((prefix) => env.STRIPE_SECRET_KEY.startsWith(prefix));
 }

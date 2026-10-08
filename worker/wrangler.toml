@@ -6,6 +6,7 @@ routes = [{ pattern = "api.indermit.com", custom_domain = true }]
 [vars]
 ENVIRONMENT = "production"
 PRIVATE_BETA = "true"
+STRIPE_MODE = "live"
 BETA_ACCESS_HASH = "c41907783f839244c45d324a69bcb85a6175cd193c9ba80577ccdb03844b1a01"
 BETA_ADMIN_HASH = "5e3e664f18062edec371da3c1729849f384457e166b602f895fee6b658d0fa46"
 FREE_GENERATIONS_ENABLED = "false"

@@ -26,9 +26,9 @@ test("Stripe signatures reject stale events", async () => {
   assert.equal(await verifyStripeSignature(body, `t=${timestamp},v1=${signature}`, secret), false);
 });
 
-test("private beta refuses a live Stripe key", async () => {
+test("live mode refuses a test Stripe key", async () => {
   await assert.rejects(
-    createCheckoutSession({ PRIVATE_BETA: "true", STRIPE_SECRET_KEY: "sk_live_do_not_use" }, "user_123", "starter"),
-    /requires Stripe test mode/,
+    createCheckoutSession({ STRIPE_MODE: "live", STRIPE_SECRET_KEY: "sk_test_do_not_use" }, "user_123", "starter"),
+    /live mode key required/,
   );
 });

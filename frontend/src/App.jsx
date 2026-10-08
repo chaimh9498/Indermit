@@ -18,7 +18,7 @@ const BUNDLES = [
 
 function App() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
-  const [beta, setBeta] = useState({ loading: true, enrolled: false, role: null, stripeTestReady: false });
+  const [beta, setBeta] = useState({ loading: true, enrolled: false, role: null, stripeReady: false, stripeMode: "live" });
   const [accessOpen, setAccessOpen] = useState(false);
   const [accessCode, setAccessCode] = useState(() => sessionStorage.getItem("indermit-beta-code") || "");
   const [accessError, setAccessError] = useState("");
@@ -26,14 +26,14 @@ function App() {
 
   const checkMembership = useCallback(async () => {
     if (!isLoaded || !isSignedIn) {
-      setBeta({ loading: false, enrolled: false, role: null, stripeTestReady: false });
+      setBeta({ loading: false, enrolled: false, role: null, stripeReady: false, stripeMode: "live" });
       return;
     }
     try {
       const result = await apiRequest("/v1/beta/me", getToken);
       setBeta({ loading: false, ...result });
     } catch (error) {
-      setBeta({ loading: false, enrolled: false, role: null, stripeTestReady: false });
+      setBeta({ loading: false, enrolled: false, role: null, stripeReady: false, stripeMode: "live" });
       setAccessError(error.message);
     }
   }, [getToken, isLoaded, isSignedIn]);
@@ -142,7 +142,7 @@ function Studio({ getToken, beta }) {
   return <div className="app-shell"><BetaBar /><header className="app-header"><BrandWordmark /><nav className="app-nav">
     <button className={view === "create" ? "active" : ""} onClick={() => setView("create")}><Sparkles size={15} /> Create</button>
     <button className={view === "images" ? "active" : ""} onClick={() => setView("images")}><ImageIcon size={15} /> My images</button>
-    <button className={view === "credits" ? "active" : ""} onClick={() => setView("credits")}><CreditCard size={15} /> Test credits</button>
+    <button className={view === "credits" ? "active" : ""} onClick={() => setView("credits")}><CreditCard size={15} /> Buy credits</button>
     {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); loadAdmin(); }}><Gauge size={15} /> Owner</button>}
   </nav><div className="account-cluster"><span><strong>{account.creditBalance}</strong> credits</span><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
@@ -153,7 +153,7 @@ function Studio({ getToken, beta }) {
         <button className="generate-live" disabled={busy || !prompt.trim()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={17} />} Generate · {activeModel.credits} credits</button>
       </div></form></section>}
     {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations will appear here." />}</section>}
-    {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>STRIPE TEST MODE</span><h1>Test credit checkout</h1><p>No real charges are accepted in the private beta. Use Stripe test cards only.</p></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeTestReady ? "Test checkout is connected" : "Test checkout needs Stripe test keys"}</strong><p>{beta.stripeTestReady ? "Payments run through Stripe's test environment and create beta credits after the test webhook succeeds." : "Checkout stays disabled until both the Stripe test secret and test webhook are configured."}</p></div></div><div className="bundle-grid">{BUNDLES.map((bundle) => <article key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits</p><button disabled={!beta.stripeTestReady || busy} onClick={() => checkout(bundle.id)}>Open test checkout</button></article>)}</div></section>}
+    {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PRIVATE BETA CHECKOUT</span><h1>Buy Indermit credits</h1><p>These are real payments processed securely by Stripe. Credits are added to your account after payment succeeds.</p></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure checkout is connected" : "Checkout is being configured"}</strong><p>{beta.stripeReady ? "Only approved private-beta members can access these packages. Failed generations are automatically refunded to your credit balance." : "Purchasing stays disabled until the live Stripe key and webhook are both available."}</p></div></div><div className="bundle-grid">{BUNDLES.map((bundle) => <article key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits</p><button disabled={!beta.stripeReady || busy} onClick={() => checkout(bundle.id)}>Buy with Stripe</button></article>)}</div></section>}
     {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={loadAdmin} />}
   </main></div>;
 }
