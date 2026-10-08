@@ -43,18 +43,29 @@ nav a:hover, .nav-link:hover { color: #fff; }
 .menu-button { display: none; background: none; border: 0; padding: 6px; }
 
 main { position: relative; z-index: 1; }
-.hero { text-align: center; max-width: 900px; padding: 86px 24px 64px; margin: auto; }
+.hero { width: min(1180px, calc(100% - 48px)); padding: 86px 0 72px; margin: auto; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .75fr); align-items: center; gap: 58px; }
+.hero-main { min-width: 0; }
 .eyebrow { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: rgba(255,255,255,.035); padding: 8px 13px; border-radius: 99px; color: #b8b8c0; font-size: 12px; letter-spacing: .03em; }
-.hero h1 { font: 800 clamp(51px, 7.5vw, 88px)/.94 Manrope, sans-serif; margin: 28px 0 27px; letter-spacing: -.07em; }
+.hero h1 { font: 800 clamp(51px, 6vw, 78px)/.94 Manrope, sans-serif; margin: 28px 0 27px; letter-spacing: -.07em; }
 .hero h1 span { color: #777780; }
-.hero-copy { max-width: 610px; margin: auto; color: #a2a2ab; font-size: 17px; line-height: 1.65; }
-.trust-row { display: flex; justify-content: center; gap: 27px; margin-top: 30px; color: #707078; font-size: 12px; }
+.hero-copy { max-width: 610px; margin: 0; color: #a2a2ab; font-size: 17px; line-height: 1.65; }
+.trust-row { display: flex; justify-content: flex-start; gap: 27px; margin-top: 30px; color: #707078; font-size: 12px; }
 .trust-row span { display: inline-flex; align-items: center; gap: 7px; }
 .provider-dot { width: 6px; height: 6px; border-radius: 50%; display: block; }
 .provider-dot.openai { background: #62d3ad; box-shadow: 0 0 12px #62d3ad; }
 .provider-dot.microsoft { background: #ffb357; box-shadow: 0 0 12px #ffb357; }
 .provider-dot.google { background: #5aa1ff; box-shadow: 0 0 12px #5aa1ff; }
 .provider-dot.xai { background: #aa7cff; box-shadow: 0 0 12px #aa7cff; }
+.launch-panel { position: relative; overflow: hidden; padding: 30px; border: 1px solid rgba(255,255,255,.13); border-radius: 22px; background: linear-gradient(145deg, rgba(34,28,49,.94), rgba(16,16,21,.96)); box-shadow: 0 24px 80px rgba(0,0,0,.36); }
+.launch-panel::after { content: ""; position: absolute; width: 210px; height: 210px; right: -95px; top: -95px; border-radius: 50%; background: rgba(151,100,255,.18); filter: blur(18px); pointer-events: none; }
+.launch-label { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; color: #c3a9ff; font: 800 10px Manrope, sans-serif; letter-spacing: .16em; }
+.launch-label > span { width: 7px; height: 7px; border-radius: 50%; background: #a979ff; box-shadow: 0 0 14px #a979ff; }
+.launch-panel h2 { position: relative; z-index: 1; margin: 22px 0 14px; font: 750 29px/1.08 Manrope, sans-serif; letter-spacing: -.05em; }
+.launch-panel p { position: relative; z-index: 1; margin: 0; color: #9696a0; font-size: 13px; line-height: 1.65; }
+.launch-models { position: relative; z-index: 1; display: flex; margin: 23px 0; }
+.launch-models span { width: 38px; height: 38px; display: grid; place-items: center; margin-right: -7px; border: 2px solid #1a1820; border-radius: 50%; background: #29242f; color: #d8caef; font-weight: 800; }
+.launch-cta { position: relative; z-index: 1; width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 10px; background: var(--cream); color: #111115; font-weight: 800; cursor: pointer; }
+
 
 .studio { width: min(1040px, calc(100% - 36px)); margin: 0 auto 90px; padding: 34px; border: 1px solid var(--line); border-radius: 22px; background: linear-gradient(145deg, rgba(24,24,28,.94), rgba(13,13,16,.94)); box-shadow: 0 25px 90px rgba(0,0,0,.36); position: relative; }
 .studio::before { content: ""; position: absolute; inset: -1px; border-radius: 22px; padding: 1px; background: linear-gradient(130deg, rgba(255,255,255,.18), transparent 30%, transparent 70%, rgba(118,83,200,.2)); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; pointer-events: none; }
@@ -168,8 +179,11 @@ footer > div { display: flex; justify-content: flex-end; gap: 24px; padding-top:
   .menu-button { display: block; }
   .header-actions .text-button, .header-actions .primary-small, .balance-pill span { display: none; }
   .balance-pill { padding: 8px 10px; }
-  .hero { padding: 70px 19px 46px; }
+  .hero { width: calc(100% - 36px); padding: 70px 0 46px; grid-template-columns: 1fr; gap: 34px; text-align: center; }
   .hero h1 { font-size: clamp(47px, 15vw, 67px); }
+  .hero-copy { margin: auto; }
+  .trust-row { justify-content: center; }
+  .launch-panel { text-align: left; }
   .hero-copy { font-size: 15px; }
   .trust-row { gap: 16px; }
   .studio { padding: 20px; width: calc(100% - 24px); }
