@@ -25,12 +25,12 @@ import { anonymousApiRequest, apiRequest } from "./api";
 const MODELS = [
   {
     id: "auto", provider: "Auto", name: "Best value",
-    description: "Indermit selects Microsoft MAI Image 2.5 while Muse is unavailable.",
+    description: "Indermit selects Microsoft MAI Image 2.5 through Microsoft Foundry.",
     credits: 12, accent: "violet", badge: "Auto",
   },
   {
-    id: "openrouter-microsoft", provider: "Microsoft", name: "MAI Image 2.5",
-    description: "Fast, capable image generation served through Microsoft Azure.",
+    id: "microsoft-mai", provider: "Microsoft", name: "MAI Image 2.5",
+    description: "Direct Microsoft Foundry image generation for commercial creative work.",
     credits: 12, accent: "amber", badge: "New",
   },
   {
