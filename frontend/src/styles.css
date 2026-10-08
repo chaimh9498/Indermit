@@ -125,6 +125,14 @@ textarea::placeholder { color: #55555f; }
 .gallery-overlay strong { font-size: 11px; }
 .gallery-overlay p { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #bbb; font-size: 11px; margin: 4px 0 0; }
 .gallery-overlay a { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.14); }
+.images-page { min-height: calc(100vh - 204px); padding-top: 72px; }
+.images-page .gallery-title { align-items: center; margin-top: 10px; }
+.images-page .gallery-title h2 { font-size: clamp(34px, 5vw, 54px); }
+.gallery-empty { min-height: 360px; display: grid; place-items: center; align-content: center; gap: 10px; text-align: center; border: 1px dashed rgba(255,255,255,.14); border-radius: 18px; background: rgba(255,255,255,.02); color: #686872; }
+.gallery-empty h3 { margin: 4px 0 0; color: #d8d8dc; font: 700 21px Manrope, sans-serif; }
+.gallery-empty p { margin: 0 0 10px; font-size: 13px; }
+.gallery-empty button { border: 0; border-radius: 9px; padding: 11px 16px; background: var(--cream); color: #111115; font-weight: 800; cursor: pointer; }
+
 .value-strip { width: min(1040px, calc(100% - 36px)); margin: 0 auto 100px; padding: 28px 34px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .value-strip > div { display: flex; align-items: center; gap: 13px; color: #6e6e77; font-size: 12px; }
 .value-strip > div:not(:last-child) { border-right: 1px solid var(--line); }
