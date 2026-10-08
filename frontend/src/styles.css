@@ -52,7 +52,7 @@ main { position: relative; z-index: 1; }
 .trust-row span { display: inline-flex; align-items: center; gap: 7px; }
 .provider-dot { width: 6px; height: 6px; border-radius: 50%; display: block; }
 .provider-dot.openai { background: #62d3ad; box-shadow: 0 0 12px #62d3ad; }
-.provider-dot.meta { background: #ffb357; box-shadow: 0 0 12px #ffb357; }
+.provider-dot.microsoft { background: #ffb357; box-shadow: 0 0 12px #ffb357; }
 .provider-dot.google { background: #5aa1ff; box-shadow: 0 0 12px #5aa1ff; }
 .provider-dot.xai { background: #aa7cff; box-shadow: 0 0 12px #aa7cff; }
 
@@ -75,7 +75,7 @@ main { position: relative; z-index: 1; }
 .provider-mark.google { background: rgba(90,161,255,.12); color: #7eb7ff; }
 .provider-mark.xai { background: rgba(170,124,255,.12); color: #ba98f7; }
 .provider-mark.auto { background: rgba(238,232,217,.12); color: var(--cream); }
-.provider-mark.meta { background: rgba(255,179,87,.12); color: #ffc271; }
+.provider-mark.microsoft { background: rgba(255,179,87,.12); color: #ffc271; }
 .model-badge { color: #777781; background: rgba(255,255,255,.05); border-radius: 6px; padding: 5px 7px; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
 .provider-name { margin: 18px 0 2px; color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
 .model-card h3 { margin: 0; font: 700 18px Manrope, sans-serif; letter-spacing: -.03em; }
