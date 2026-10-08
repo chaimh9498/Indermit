@@ -29,7 +29,7 @@ function App() {
       <header className="site-header">
         <a className="brand" href="/" aria-label="Indermit home">
           <img src="/indermit-mark.webp" alt="" />
-          <span>indermit</span>
+          <span>INDERMIT</span>
         </a>
 
         <div className="header-actions">
@@ -122,7 +122,7 @@ function App() {
       <footer>
         <a className="brand footer-brand" href="/">
           <img src="/indermit-mark.webp" alt="" />
-          <span>indermit</span>
+          <span>INDERMIT</span>
         </a>
         <nav aria-label="Legal and support">
           <a href="/terms.html">Terms</a>
