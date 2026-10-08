@@ -26,12 +26,12 @@ const MODELS = [
   {
     id: "auto", provider: "Auto", name: "Best value",
     description: "Indermit selects the best available model for your request.",
-    credits: 2, accent: "violet", badge: "Auto",
+    credits: 2, accent: "violet", badge: "Live", available: true,
   },
   {
     id: "microsoft-mai", provider: "Microsoft", name: "MAI Image 2.6",
     description: "Direct Microsoft Foundry image generation for commercial creative work.",
-    credits: 2, accent: "amber", badge: "New",
+    credits: 2, accent: "amber", badge: "Coming soon", available: false,
   },
   {
     id: "openai-sunburst",
@@ -40,7 +40,8 @@ const MODELS = [
     description: "Precise composition, detail, and typography.",
     credits: 30,
     accent: "mint",
-    badge: "Best quality",
+    badge: "Coming soon",
+    available: false,
   },
   {
     id: "google-nano-banana",
@@ -49,7 +50,8 @@ const MODELS = [
     description: "Ultra-fast, cost-efficient image generation for everyday ideas.",
     credits: 2,
     accent: "blue",
-    badge: "Best value",
+    badge: "Live",
+    available: true,
   },
   {
     id: "xai-imagine",
@@ -58,7 +60,8 @@ const MODELS = [
     description: "Bold, high-speed creative image generation.",
     credits: 15,
     accent: "violet",
-    badge: "Fastest",
+    badge: "Coming soon",
+    available: false,
   },
 ];
 
@@ -236,8 +239,8 @@ function App() {
                     onChange={(event) => setModel(MODELS.find((item) => item.id === event.target.value) || MODELS[0])}
                   >
                     {MODELS.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.provider} · {item.name} · {item.credits} credits
+                      <option key={item.id} value={item.id} disabled={!item.available}>
+                        {item.provider} · {item.name} · {item.available ? `${item.credits} credits` : "Coming soon"}
                       </option>
                     ))}
                   </select>
