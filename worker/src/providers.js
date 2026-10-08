@@ -2,7 +2,6 @@ import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
   auto: { provider: "Google", credits: 2 },
-  "microsoft-mai": { provider: "Microsoft", credits: 2 },
   "openai-sunburst": { provider: "OpenAI", credits: 30 },
   "google-nano-banana": { provider: "Google", credits: 2 },
   "xai-imagine": { provider: "xAI", credits: 15 },
@@ -13,7 +12,6 @@ const AZURE_MAI_SIZES = { "1:1": [1024, 1024], "16:9": [1360, 768], "9:16": [768
 
 export async function generateImage(env, input) {
   if (input.model === "auto" || input.model === "google-nano-banana") return generateGoogle(env, input);
-  if (input.model === "microsoft-mai") return generateMicrosoftMai(env, input);
   if (input.model === "openai-sunburst") return generateOpenAI(env, input);
   if (input.model === "xai-imagine") return generateXai(env, input);
   throw new Error("Unsupported model");
