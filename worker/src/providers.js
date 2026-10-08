@@ -1,44 +1,48 @@
 import { base64ToBytes } from "./utils.js";
 
 export const MODEL_CONFIG = {
-  auto: { provider: "OpenRouter", credits: 12 },
-  "openrouter-microsoft": { provider: "Microsoft via OpenRouter", credits: 12 },
+  auto: { provider: "Microsoft", credits: 12 },
+  "microsoft-mai": { provider: "Microsoft", credits: 12 },
   "openai-sunburst": { provider: "OpenAI", credits: 30 },
   "google-nano-banana": { provider: "Google", credits: 20 },
   "xai-imagine": { provider: "xAI", credits: 15 },
 };
 
 const OPENAI_SIZES = { "1:1": "1024x1024", "16:9": "1536x864", "9:16": "864x1536" };
+const AZURE_MAI_SIZES = { "1:1": [1024, 1024], "16:9": [1360, 768], "9:16": [768, 1360] };
 
 export async function generateImage(env, input) {
-  if (input.model === "auto" || input.model === "openrouter-microsoft") return generateOpenRouterMicrosoft(env, input);
+  if (input.model === "auto" || input.model === "microsoft-mai") return generateMicrosoftMai(env, input);
   if (input.model === "openai-sunburst") return generateOpenAI(env, input);
   if (input.model === "google-nano-banana") return generateGoogle(env, input);
   if (input.model === "xai-imagine") return generateXai(env, input);
   throw new Error("Unsupported model");
 }
 
-async function generateOpenRouterMicrosoft(env, { prompt, aspectRatio }) {
-  if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured");
-  const response = await fetch("https://openrouter.ai/api/v1/images", {
+async function generateMicrosoftMai(env, { prompt, aspectRatio }) {
+  if (!env.AZURE_MAI_API_KEY || !env.AZURE_MAI_ENDPOINT || !env.AZURE_MAI_DEPLOYMENT) {
+    throw new Error("Microsoft is not configured");
+  }
+  const [width, height] = AZURE_MAI_SIZES[aspectRatio] || AZURE_MAI_SIZES["1:1"];
+  const endpoint = env.AZURE_MAI_ENDPOINT.replace(/\/$/, "");
+  const response = await fetch(`${endpoint}/mai/v1/images/generations`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      "api-key": env.AZURE_MAI_API_KEY,
       "Content-Type": "application/json",
-      "HTTP-Referer": env.FRONTEND_URL || "https://indermit.com",
-      "X-Title": "Indermit",
     },
     body: JSON.stringify({
-      model: env.OPENROUTER_MICROSOFT_MODEL || "microsoft/mai-image-2.5",
+      model: env.AZURE_MAI_DEPLOYMENT,
       prompt,
-      aspect_ratio: aspectRatio,
+      width,
+      height,
     }),
   });
   const result = await response.json();
-  if (!response.ok) throw new ProviderError("OpenRouter", result.error?.message);
-  const image = result.data?.[0];
-  if (!image?.b64_json) throw new ProviderError("OpenRouter", "No image returned");
-  return { bytes: base64ToBytes(image.b64_json), mimeType: image.media_type || "image/png" };
+  if (!response.ok) throw new ProviderError("Microsoft", result.error?.message || result.message);
+  const encoded = result.data?.[0]?.b64_json;
+  if (!encoded) throw new ProviderError("Microsoft", "No image returned");
+  return { bytes: base64ToBytes(encoded), mimeType: "image/png" };
 }
 
 async function generateOpenAI(env, { prompt, aspectRatio }) {
