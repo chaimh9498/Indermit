@@ -25,13 +25,13 @@ import { anonymousApiRequest, apiRequest } from "./api";
 const MODELS = [
   {
     id: "auto", provider: "Auto", name: "Best value",
-    description: "Indermit selects Muse, our lowest-cost available image model.",
-    credits: 3, accent: "violet", badge: "Cheapest",
+    description: "Indermit selects Microsoft MAI Image 2.5 while Muse is unavailable.",
+    credits: 12, accent: "violet", badge: "Auto",
   },
   {
-    id: "openrouter-muse", provider: "Meta", name: "Muse Image",
-    description: "Agentic image generation with strong text and prompt accuracy.",
-    credits: 3, accent: "amber", badge: "New",
+    id: "openrouter-microsoft", provider: "Microsoft", name: "MAI Image 2.5",
+    description: "Fast, capable image generation served through Microsoft Azure.",
+    credits: 12, accent: "amber", badge: "New",
   },
   {
     id: "openai-sunburst",
@@ -174,7 +174,7 @@ function App() {
           <h1>Imagine it.<br /><span>Choose who creates it.</span></h1>
           <p className="hero-copy">One prompt. Multiple creative engines. Pick the model that fits your idea and turn words into exceptional images.</p>
           <div className="trust-row">
-            <span><span className="provider-dot meta" /> Meta</span>
+            <span><span className="provider-dot microsoft" /> Microsoft</span>
             <span><span className="provider-dot openai" /> OpenAI</span>
             <span><span className="provider-dot google" /> Google</span>
             <span><span className="provider-dot xai" /> xAI</span>
@@ -359,7 +359,7 @@ function BrandMark() {
 }
 
 function ProviderMark({ provider }) {
-  const mark = provider === "OpenAI" ? "◎" : provider === "Google" ? "G" : provider === "Meta" ? "M" : provider === "Auto" ? "✦" : "𝕏";
+  const mark = provider === "OpenAI" ? "◎" : provider === "Google" ? "G" : provider === "Microsoft" ? "M" : provider === "Auto" ? "✦" : "𝕏";
   return <span className={`provider-mark ${provider.toLowerCase()}`}>{mark}</span>;
 }
 
