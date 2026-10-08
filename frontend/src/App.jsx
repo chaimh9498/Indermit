@@ -26,12 +26,12 @@ const MODELS = [
   {
     id: "auto", provider: "Auto", name: "Best value",
     description: "Indermit selects Microsoft MAI Image 2.5 through Microsoft Foundry.",
-    credits: 12, accent: "violet", badge: "Auto",
+    credits: 2, accent: "violet", badge: "Auto",
   },
   {
     id: "microsoft-mai", provider: "Microsoft", name: "MAI Image 2.5",
     description: "Direct Microsoft Foundry image generation for commercial creative work.",
-    credits: 12, accent: "amber", badge: "New",
+    credits: 2, accent: "amber", badge: "New",
   },
   {
     id: "openai-sunburst",
@@ -69,9 +69,9 @@ const ASPECTS = [
 ];
 
 const PACKAGES = [
-  { id: "starter", credits: 500, price: 5, label: "Starter" },
-  { id: "creator", credits: 1650, price: 15, label: "Creator", popular: true },
-  { id: "pro", credits: 4600, price: 40, label: "Pro" },
+  { id: "starter", credits: 100, price: 5, label: "Starter" },
+  { id: "creator", credits: 330, price: 15, label: "Creator", popular: true },
+  { id: "pro", credits: 920, price: 40, label: "Pro" },
 ];
 
 function App() {
@@ -344,7 +344,7 @@ function CreditModal({ onClose, onBuy }) {
               <strong>{item.label}</strong>
               <span className="package-price">${item.price}</span>
               <span>{item.credits.toLocaleString()} credits</span>
-              <small>{Math.floor(item.credits / 50)}+ standard creations</small>
+              <small>{Math.floor(item.credits / 2)} MAI Standard images</small>
             </button>
           ))}
         </div>
