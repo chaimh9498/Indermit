@@ -277,11 +277,13 @@ async function serveImage(request, env) {
 async function handleStripeWebhook(request, env) {
   const rawBody = await request.text();
   const signature = request.headers.get("stripe-signature") || "";
+  if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "Payments are not configured yet" }, 503);
   if (!await verifyStripeSignature(rawBody, signature, env.STRIPE_WEBHOOK_SECRET)) {
     return json({ error: "Invalid webhook signature" }, 400);
   }
   const event = JSON.parse(rawBody);
-  if (event.type !== "checkout.session.completed") return json({ received: true });
+  const paymentEvents = ["checkout.session.completed", "checkout.session.async_payment_succeeded"];
+  if (!paymentEvents.includes(event.type)) return json({ received: true });
   const session = event.data?.object;
   if (session?.payment_status !== "paid") return json({ received: true });
 
