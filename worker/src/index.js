@@ -45,7 +45,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
     ).bind(userId).first();
     return json({
       creditBalance: user?.credit_balance || 0,
-      freeGenerationsRemaining: user?.free_generations_remaining || 0,
+      freeGenerationsRemaining: env.FREE_GENERATIONS_ENABLED === "true" ? user?.free_generations_remaining || 0 : 0,
     });
   }
 
@@ -86,8 +86,8 @@ async function createGeneration(request, env, userId, apiOrigin) {
   const account = await env.DB.prepare(
     "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
   ).bind(userId).first();
-  const freeEligibleModel = input.model === "auto" || input.model === "google-nano-banana";
-  const chargeKind = freeEligibleModel && account.free_generations_remaining > 0 ? "signup_free" : "credits";
+  const freeGenerationsEnabled = env.FREE_GENERATIONS_ENABLED === "true";
+  const chargeKind = freeGenerationsEnabled && account.free_generations_remaining > 0 ? "signup_free" : "credits";
   const creditCost = chargeKind === "signup_free" ? 0 : config.credits;
   const reserved = chargeKind === "signup_free"
     ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio })
@@ -117,7 +117,7 @@ async function createGeneration(request, env, userId, apiOrigin) {
   return json({
     generation: await serializeGeneration(row, env, apiOrigin),
     creditBalance: user.credit_balance,
-    freeGenerationsRemaining: user.free_generations_remaining,
+    freeGenerationsRemaining: env.FREE_GENERATIONS_ENABLED === "true" ? user.free_generations_remaining : 0,
   }, 201);
 }
 
