@@ -23,7 +23,7 @@ function App() {
       <div className="beta-bar">
         <span className="beta-dot" />
         INDERMIT IS IN BETA
-        <span>Accounts are open. Image generation is temporarily paused.</span>
+        <span>Account creation is open. Image generation is coming soon.</span>
       </div>
 
       <header className="site-header">
