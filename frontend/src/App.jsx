@@ -196,15 +196,31 @@ function App() {
         ) : (
           <>
         <section className="hero">
-          <div className="eyebrow"><Sparkles size={14} /> The world's best image models, one canvas</div>
-          <h1>Imagine it.<br /><span>Choose who creates it.</span></h1>
-          <p className="hero-copy">One prompt. Multiple creative engines. Pick the model that fits your idea and turn words into exceptional images.</p>
-          <div className="trust-row">
-            <span><span className="provider-dot microsoft" /> Microsoft</span>
-            <span><span className="provider-dot openai" /> OpenAI</span>
-            <span><span className="provider-dot google" /> Google</span>
-            <span><span className="provider-dot xai" /> xAI</span>
+          <div className="hero-main">
+            <div className="eyebrow"><Sparkles size={14} /> The world's best image models, one canvas</div>
+            <h1>Imagine it.<br /><span>Choose who creates it.</span></h1>
+            <p className="hero-copy">One prompt. Multiple creative engines. Pick the model that fits your idea and turn words into exceptional images.</p>
+            <div className="trust-row">
+              <span><span className="provider-dot microsoft" /> Microsoft</span>
+              <span><span className="provider-dot openai" /> OpenAI</span>
+              <span><span className="provider-dot google" /> Google</span>
+              <span><span className="provider-dot xai" /> xAI</span>
+            </div>
           </div>
+          <aside className="launch-panel">
+            <span className="launch-label"><span /> LAUNCHING SOON</span>
+            <h2>More leading models.<br />One Indermit account.</h2>
+            <p>Microsoft MAI, OpenAI, and xAI are coming to your model menu. Create your account now and start with Google today.</p>
+            <div className="launch-models">
+              <span>M</span><span>◎</span><span>𝕏</span>
+            </div>
+            <SignedOut>
+              <SignUpButton mode="modal"><button className="launch-cta">Create account</button></SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <a className="launch-cta" href="#create">Start creating</a>
+            </SignedIn>
+          </aside>
         </section>
 
         <section className="studio" id="create">
