@@ -1,9 +1,9 @@
 import { constantTimeEqual, hmacHex } from "./utils.js";
 
 export const CREDIT_BUNDLES = {
-  starter: { name: "Starter credits", credits: 500, cents: 500 },
-  creator: { name: "Creator credits", credits: 1650, cents: 1500 },
-  pro: { name: "Pro credits", credits: 4600, cents: 4000 },
+  starter: { name: "Starter credits", credits: 100, cents: 500 },
+  creator: { name: "Creator credits", credits: 330, cents: 1500 },
+  pro: { name: "Pro credits", credits: 920, cents: 4000 },
 };
 
 export async function createCheckoutSession(env, userId, bundleId) {
