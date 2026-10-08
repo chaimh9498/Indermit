@@ -90,6 +90,7 @@ function App() {
   const [buyOpen, setBuyOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [anonymousUsed, setAnonymousUsed] = useState(false);
+  const [view, setView] = useState(window.location.hash === "#my-images" ? "images" : "create");
 
   const selectedAspect = useMemo(
     () => ASPECTS.find((item) => item.value === aspect),
@@ -108,6 +109,20 @@ function App() {
     } catch (error) {
       setMessage(error.message);
     }
+  }
+
+  async function openImages() {
+    await loadAccount();
+    setView("images");
+    window.history.pushState({}, "", "#my-images");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openCreate(event) {
+    event?.preventDefault();
+    setView("create");
+    window.history.pushState({}, "", "#create");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   useEffect(() => {
@@ -168,10 +183,15 @@ function App() {
         onBuy={() => setBuyOpen(true)}
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
-        loadAccount={loadAccount}
+        onImages={openImages}
+        onCreate={openCreate}
       />
 
       <main>
+        {view === "images" ? (
+          <Gallery history={history} standalone onCreate={openCreate} />
+        ) : (
+          <>
         <section className="hero">
           <div className="eyebrow"><Sparkles size={14} /> The world's best image models, one canvas</div>
           <h1>Imagine it.<br /><span>Choose who creates it.</span></h1>
@@ -289,6 +309,8 @@ function App() {
           <div><ImageIcon size={20} /><span><strong>Your gallery</strong> saved automatically</span></div>
           <div><Sparkles size={20} /><span><strong>No subscriptions</strong> pay only when you create</span></div>
         </section>
+          </>
+        )}
       </main>
 
       <footer>
@@ -302,13 +324,13 @@ function App() {
   );
 }
 
-function Header({ balance, freeRemaining, onBuy, menuOpen, setMenuOpen, loadAccount }) {
+function Header({ balance, freeRemaining, onBuy, menuOpen, setMenuOpen, onImages, onCreate }) {
   return (
     <header>
       <a className="brand" href="/"><BrandMark /> indermit</a>
       <nav className={menuOpen ? "open" : ""}>
-        <a href="#create" onClick={() => setMenuOpen(false)}>Create</a>
-        <SignedIn><button className="nav-link" onClick={() => { loadAccount(); setMenuOpen(false); }}>My images</button></SignedIn>
+        <a href="#create" onClick={(event) => { setMenuOpen(false); onCreate(event); }}>Create</a>
+        <SignedIn><button className="nav-link" onClick={() => { setMenuOpen(false); onImages(); }}>My images</button></SignedIn>
         <a href="#pricing" onClick={() => { onBuy(); setMenuOpen(false); }}>Pricing</a>
       </nav>
       <div className="header-actions">
@@ -328,23 +350,35 @@ function Header({ balance, freeRemaining, onBuy, menuOpen, setMenuOpen, loadAcco
   );
 }
 
-function Gallery({ history }) {
-  if (!history.length) return null;
+function Gallery({ history, standalone = false, onCreate }) {
+  if (!history.length && !standalone) return null;
   return (
-    <section className="gallery">
-      <span className="section-kicker">YOUR CREATIONS</span>
-      <div className="gallery-title"><h2>Recent images</h2><span>{history.length} saved</span></div>
-      <div className="gallery-grid">
-        {history.map((item) => (
-          <article className="gallery-item" key={item.id}>
-            <img src={item.imageUrl} alt={item.prompt} loading="lazy" />
-            <div className="gallery-overlay">
-              <div><strong>{item.provider}</strong><p>{item.prompt}</p></div>
-              <a href={item.downloadUrl} aria-label="Download"><Download size={18} /></a>
-            </div>
-          </article>
-        ))}
+    <section className={`gallery ${standalone ? "images-page" : ""}`} id={standalone ? "my-images" : undefined}>
+      <span className="section-kicker">{standalone ? "YOUR LIBRARY" : "YOUR CREATIONS"}</span>
+      <div className="gallery-title">
+        <h2>{standalone ? "My images" : "Recent images"}</h2>
+        <span>{history.length} saved</span>
       </div>
+      {history.length ? (
+        <div className="gallery-grid">
+          {history.map((item) => (
+            <article className="gallery-item" key={item.id}>
+              <img src={item.imageUrl} alt={item.prompt} loading="lazy" />
+              <div className="gallery-overlay">
+                <div><strong>{item.provider}</strong><p>{item.prompt}</p></div>
+                <a href={item.downloadUrl} aria-label="Download"><Download size={18} /></a>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="gallery-empty">
+          <ImageIcon size={34} />
+          <h3>No images yet</h3>
+          <p>Your generated images will be saved here automatically.</p>
+          <button onClick={onCreate}>Create your first image</button>
+        </div>
+      )}
     </section>
   );
 }
