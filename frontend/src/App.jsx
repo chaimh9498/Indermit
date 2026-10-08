@@ -201,8 +201,8 @@ function App() {
           </div>
           <aside className="launch-panel">
             <span className="launch-label live"><span /> GEMINI IS LIVE</span>
-            <h2>Create an account.<br /><span>Get 5 Gemini generations free.</span></h2>
-            <p>Generate five images with Gemini during the Indermit beta, then purchase credits whenever you want to continue.</p>
+            <h2>Create an account.<br /><span>Free beta rewards are coming.</span></h2>
+            <p>Five free generations across every available model will unlock after our abuse-protection system is live.</p>
             <div className="live-model">
               <ProviderMark provider="Google" />
               <div><strong>Gemini · Nano Banana 2 Lite</strong><small>Available now · 2 credits</small></div>
@@ -214,7 +214,7 @@ function App() {
               <strong>𝕏 xAI</strong>
             </div>
             <SignedOut>
-              <SignUpButton mode="modal"><button className="launch-cta">Create account · Get 5 free Gemini generations</button></SignUpButton>
+              <SignUpButton mode="modal"><button className="launch-cta">Create account</button></SignUpButton>
             </SignedOut>
             <SignedIn>
               <span className="account-ready"><Check size={16} /> Your account is ready</span>
