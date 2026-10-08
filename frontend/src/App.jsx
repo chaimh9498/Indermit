@@ -29,11 +29,6 @@ const MODELS = [
     credits: 2, accent: "violet", badge: "Live", available: true,
   },
   {
-    id: "microsoft-mai", provider: "Microsoft", name: "MAI Image 2.6",
-    description: "Direct Microsoft Foundry image generation for commercial creative work.",
-    credits: 2, accent: "amber", badge: "Coming soon", available: false,
-  },
-  {
     id: "openai-sunburst",
     provider: "OpenAI",
     name: "Sunburst",
@@ -201,24 +196,30 @@ function App() {
             <h1>Imagine it.<br /><span>Choose who creates it.</span></h1>
             <p className="hero-copy">One prompt. Multiple creative engines. Pick the model that fits your idea and turn words into exceptional images.</p>
             <div className="trust-row">
-              <span><span className="provider-dot microsoft" /> Microsoft</span>
               <span><span className="provider-dot openai" /> OpenAI</span>
               <span><span className="provider-dot google" /> Google</span>
               <span><span className="provider-dot xai" /> xAI</span>
             </div>
           </div>
           <aside className="launch-panel">
-            <span className="launch-label"><span /> LAUNCHING SOON</span>
-            <h2>More leading models.<br />One Indermit account.</h2>
-            <p>Microsoft MAI, OpenAI, and xAI are coming to your model menu. Create your account now and start with Google today.</p>
-            <div className="launch-models">
-              <span>M</span><span>◎</span><span>𝕏</span>
+            <span className="launch-label live"><span /> GEMINI IS LIVE</span>
+            <h2>Start creating now.<br /><span>More models are coming.</span></h2>
+            <p>Google Gemini Nano Banana 2 Lite is available today—fast, efficient, and ready for your first image.</p>
+            <div className="live-model">
+              <ProviderMark provider="Google" />
+              <div><strong>Gemini · Nano Banana 2 Lite</strong><small>Available now · 2 credits</small></div>
+              <span className="live-pill">LIVE</span>
+            </div>
+            <div className="coming-row">
+              <span>COMING SOON</span>
+              <strong>◎ OpenAI</strong>
+              <strong>𝕏 xAI</strong>
             </div>
             <SignedOut>
               <SignUpButton mode="modal"><button className="launch-cta">Create account</button></SignUpButton>
             </SignedOut>
             <SignedIn>
-              <a className="launch-cta" href="#create">Start creating</a>
+              <span className="account-ready"><Check size={16} /> Your account is ready</span>
             </SignedIn>
           </aside>
         </section>
