@@ -93,7 +93,7 @@ function App() {
             <span className="paused-badge"><LockKeyhole size={13} /> Generation paused</span>
           </div>
 
-          <div className="composer" aria-disabled="true">
+          <div className="composer">
             <textarea
               disabled
               aria-label="Image prompt"
