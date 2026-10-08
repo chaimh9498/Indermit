@@ -78,11 +78,10 @@ function App() {
 
         </section>
 
-        <section className="studio-preview" aria-labelledby="studio-title">
+        <section className="studio-preview" aria-label="Indermit Studio">
           <div className="studio-topline">
             <div>
               <span className="section-label">INDERMIT STUDIO</span>
-              <h2 id="studio-title">Create from one canvas.</h2>
             </div>
             <span className="paused-badge"><LockKeyhole size={13} /> Generation paused</span>
           </div>
