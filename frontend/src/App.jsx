@@ -126,7 +126,9 @@ function App() {
 function BrandWordmark() {
   return (
     <span className="brand-wordmark" aria-hidden="true">
-      <span className="wordmark-i" />
+      <svg className="wordmark-i" viewBox="0 0 24 32" focusable="false">
+        <path d="M4 0H24V32H4C1.8 32 0 30.2 0 28V26H17V6H0V4C0 1.8 1.8 0 4 0Z" />
+      </svg>
       <span className="wordmark-middle">NDERMI</span><span className="wordmark-t">T</span>
     </span>
   );
