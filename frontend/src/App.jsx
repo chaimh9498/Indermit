@@ -108,9 +108,12 @@ function App() {
 
 function BrandWordmark() {
   return (
-    <span className="brand-wordmark" aria-hidden="true">
-      <span className="wordmark-middle">INDERMI</span><span className="wordmark-t">T</span>
-    </span>
+    <img
+      className="brand-wordmark"
+      src="/indermit-wordmark-official.png"
+      alt=""
+      aria-hidden="true"
+    />
   );
 }
 
