@@ -25,13 +25,8 @@ import { anonymousApiRequest, apiRequest } from "./api";
 const MODELS = [
   {
     id: "auto", provider: "Auto", name: "Best value",
-    description: "Indermit selects Muse, our lowest-cost available image model.",
+    description: "Indermit selects GPT Image 2, our lowest-cost active image model.",
     credits: 3, accent: "violet", badge: "Cheapest",
-  },
-  {
-    id: "openrouter-muse", provider: "Meta", name: "Muse Image",
-    description: "Agentic image generation with strong text and prompt accuracy.",
-    credits: 3, accent: "amber", badge: "New",
   },
   {
     id: "openai-sunburst",
@@ -174,7 +169,6 @@ function App() {
           <h1>Imagine it.<br /><span>Choose who creates it.</span></h1>
           <p className="hero-copy">One prompt. Multiple creative engines. Pick the model that fits your idea and turn words into exceptional images.</p>
           <div className="trust-row">
-            <span><span className="provider-dot meta" /> Meta</span>
             <span><span className="provider-dot openai" /> OpenAI</span>
             <span><span className="provider-dot google" /> Google</span>
             <span><span className="provider-dot xai" /> xAI</span>
