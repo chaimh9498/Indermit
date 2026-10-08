@@ -12,7 +12,16 @@ export default {
       const url = new URL(request.url);
       let response;
 
-      if (request.method === "GET" && url.pathname === "/v1/health") {
+      if (request.method === "GET" && url.pathname === "/v1/health/openrouter") {
+        if (!env.OPENROUTER_API_KEY) {
+          response = json({ ok: false, status: "missing" }, 503);
+        } else {
+          const check = await fetch("https://openrouter.ai/api/v1/key", {
+            headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
+          });
+          response = json({ ok: check.ok, status: check.status });
+        }
+      } else if (request.method === "GET" && url.pathname === "/v1/health") {
         response = json({ ok: true, service: "indermit-api", providers: { openrouterConfigured: Boolean(env.OPENROUTER_API_KEY) } });
       } else if (request.method === "POST" && url.pathname === "/v1/webhooks/stripe") {
         response = await handleStripeWebhook(request, env);
