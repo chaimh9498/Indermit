@@ -302,3 +302,4 @@ footer nav a:hover { color: #fff; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+.image-card img { width: 100%; height: auto; display: block; object-fit: contain; background: #0a0b0f; }
