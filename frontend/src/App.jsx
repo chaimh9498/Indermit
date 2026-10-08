@@ -51,10 +51,9 @@ function App() {
       <main>
         <section className="hero">
           <div className="hero-copy">
-            <div className="status-pill"><Sparkles size={14} /> The unified AI image studio</div>
             <h1>AI image generation.<br /><span>All in one place.</span></h1>
             <p>
-              Indermit brings leading AI image generators into one simple studio,
+              Indermit brings leading AI image generators into one simple platform,
               so you can choose the right model without switching between apps.
             </p>
 
@@ -65,7 +64,6 @@ function App() {
                     Create your Indermit account <ArrowUpRight size={18} />
                   </button>
                 </SignUpButton>
-                <span>Account creation is available now.</span>
               </SignedOut>
               <SignedIn>
                 <div className="signed-in-message">
@@ -79,12 +77,6 @@ function App() {
         </section>
 
         <section className="studio-preview" aria-label="Indermit Studio">
-          <div className="studio-topline">
-            <div>
-              <span className="section-label">INDERMIT STUDIO</span>
-            </div>
-          </div>
-
           <div className="composer">
             <textarea
               disabled
@@ -112,10 +104,6 @@ function App() {
             </div>
           </div>
 
-          <div className="availability-note">
-            <span>01</span>
-            <p><strong>Accounts are open now.</strong> Generation access will return in stages as we finish the beta safeguards and launch setup.</p>
-          </div>
         </section>
       </main>
 
@@ -138,7 +126,7 @@ function BrandWordmark() {
   return (
     <span className="brand-wordmark" aria-hidden="true">
       <span className="wordmark-i" />
-      <span className="wordmark-rest">NDERMIT</span>
+      <span className="wordmark-middle">NDERMI</span><span className="wordmark-t">T</span>
     </span>
   );
 }
