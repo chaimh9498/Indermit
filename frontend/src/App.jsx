@@ -53,8 +53,9 @@ function App() {
           <div className="hero-copy">
             <h1>AI image generation.<br /><span>All in one place.</span></h1>
             <p>
-              Indermit brings leading AI image generators into one simple platform,
-              so you can choose the right model without switching between apps.
+              Indermit brings leading AI image generators into one simple platform.
+              Buy credits once and use them across every available model—without
+              juggling separate apps, subscriptions, or accounts.
             </p>
 
             <div className="hero-actions">
