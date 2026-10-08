@@ -7,6 +7,7 @@ export const CREDIT_BUNDLES = {
 };
 
 export async function createCheckoutSession(env, userId, bundleId) {
+  if (!env.STRIPE_SECRET_KEY) throw new Error("Payments are not configured yet");
   const bundle = CREDIT_BUNDLES[bundleId];
   if (!bundle) throw new Error("Unknown credit package");
   const params = new URLSearchParams({
