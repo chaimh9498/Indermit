@@ -51,11 +51,11 @@ function App() {
       <main>
         <section className="hero">
           <div className="hero-copy">
-            <div className="status-pill"><Sparkles size={14} /> One prompt. Every leading image model.</div>
-            <h1>Your ideas.<br /><span>Every model.</span><br />One place.</h1>
+            <div className="status-pill"><Sparkles size={14} /> The unified AI image studio</div>
+            <h1>AI image generation.<br /><span>All in one place.</span></h1>
             <p>
-              Indermit is building one simple place to create AI images with the
-              world&apos;s leading models—without switching between different apps.
+              Indermit brings leading AI image generators into one simple studio,
+              so you can choose the right model without switching between apps.
             </p>
 
             <div className="hero-actions">
@@ -76,12 +76,6 @@ function App() {
             </div>
           </div>
 
-          <div className="brand-stage" aria-hidden="true">
-            <div className="orbit orbit-one" />
-            <div className="orbit orbit-two" />
-            <div className="logo-glow" />
-            <img src="/indermit-mark.webp" alt="" />
-          </div>
         </section>
 
         <section className="studio-preview" aria-labelledby="studio-title">
