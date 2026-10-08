@@ -124,7 +124,6 @@ function App() {
           <img src="/indermit-mark.webp" alt="" />
           <span>indermit</span>
         </a>
-        <p>AI image generation, brought together.</p>
         <nav aria-label="Legal and support">
           <a href="/terms.html">Terms</a>
           <a href="/privacy.html">Privacy</a>
