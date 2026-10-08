@@ -45,11 +45,11 @@ const MODELS = [
   {
     id: "google-nano-banana",
     provider: "Google",
-    name: "Nano Banana 2",
-    description: "Fast generation with excellent prompt understanding.",
-    credits: 20,
+    name: "Nano Banana 2 Lite",
+    description: "Ultra-fast, cost-efficient image generation for everyday ideas.",
+    credits: 2,
     accent: "blue",
-    badge: "Balanced",
+    badge: "Best value",
   },
   {
     id: "xai-imagine",
@@ -361,7 +361,7 @@ function CreditModal({ onClose, onBuy }) {
               <strong>{item.label}</strong>
               <span className="package-price">${item.price}</span>
               <span>{item.credits.toLocaleString()} credits</span>
-              <small>{Math.floor(item.credits / 2)} MAI Standard images</small>
+              <small>{Math.floor(item.credits / 2)} Auto images</small>
             </button>
           ))}
         </div>
