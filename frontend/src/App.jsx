@@ -204,8 +204,8 @@ function App() {
           </div>
           <aside className="launch-panel">
             <span className="launch-label live"><span /> GEMINI IS LIVE</span>
-            <h2>Start creating now.<br /><span>More models are coming.</span></h2>
-            <p>Google Gemini Nano Banana 2 Lite is available today—fast, efficient, and ready for your first image.</p>
+            <h2>Try it out.<br /><span>Create your first image free.</span></h2>
+            <p>No account is required for your first image. Create an account afterward to unlock 5 additional free generations.</p>
             <div className="live-model">
               <ProviderMark provider="Google" />
               <div><strong>Gemini · Nano Banana 2 Lite</strong><small>Available now · 2 credits</small></div>
@@ -217,7 +217,7 @@ function App() {
               <strong>𝕏 xAI</strong>
             </div>
             <SignedOut>
-              <SignUpButton mode="modal"><button className="launch-cta">Create account</button></SignUpButton>
+              <SignUpButton mode="modal"><button className="launch-cta">Create account · Get 5 free generations</button></SignUpButton>
             </SignedOut>
             <SignedIn>
               <span className="account-ready"><Check size={16} /> Your account is ready</span>
