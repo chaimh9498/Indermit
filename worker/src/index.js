@@ -397,13 +397,13 @@ async function checkGenerationLimits(env, userId, provider) {
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND status = 'processing'").bind(userId).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'processing'").first(),
     env.DB.prepare(
-      `SELECT COUNT(*) AS count FROM generations WHERE user_id = ?
+      `SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND status = 'completed'
        AND created_at >= CASE
          WHEN datetime('now', '-1 hour') > datetime(?) THEN datetime('now', '-1 hour')
          ELSE datetime(?)
        END`,
     ).bind(userId, hourlyResetAt, hourlyResetAt).first(),
-    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND created_at >= datetime('now', 'start of day')").bind(userId).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND status = 'completed' AND created_at >= datetime('now', 'start of day')").bind(userId).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE provider = ? AND created_at >= datetime('now', 'start of day')").bind(provider).first(),
   ]);
   if ((processing?.count || 0) >= positiveInteger(env.MAX_CONCURRENT_GENERATIONS, 1)) {
