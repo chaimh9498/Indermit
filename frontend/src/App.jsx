@@ -67,14 +67,10 @@ function Landing(props) {
       <BetaBar /><Header onAccess={() => props.onAccessOpen(true)} />
       <main>
         <section className="hero"><div className="hero-copy">
-          <div className="status-pill"><Sparkles size={13} /> PUBLIC BETA</div>
           <h1>AI image generation.<br /><span>All in one place.</span></h1>
           <p>Indermit brings leading AI image generators into one simple platform. Buy credits once and use them across every available model without needing to handle separate apps, subscriptions, or accounts.</p>
-          <SignedOut><SignUpButton mode="modal"><button className="button button-primary button-large">Create an account <ArrowRight size={16} /></button></SignUpButton></SignedOut>
-          <SignedIn><button className="button button-primary button-large" onClick={props.onActivate}>Join the public beta <ArrowRight size={16} /></button></SignedIn>
+          <section className="studio-preview" aria-label="Indermit Studio preview"><Composer isSignedIn={props.isSignedIn} onActivate={props.onActivate} /></section>
         </div></section>
-        <section className="model-disclosure"><span className="section-label">AVAILABLE AT LAUNCH</span><h2>Know exactly what is included before you buy.</h2><div>{MODELS.filter((item) => item.id !== "auto").map((item) => <article key={item.id}><strong>{item.name}</strong><span>{item.provider} · {item.credits} {item.credits === 1 ? "credit" : "credits"} per image</span><em>1K · Low quality</em></article>)}</div><p>Anyone can create an Indermit account. The first 25 customers who purchase credits receive public-beta generation access. Higher-quality models and additional providers will be added after testing.</p></section>
-        <section className="studio-preview" aria-label="Indermit Studio preview"><Composer isSignedIn={props.isSignedIn} onActivate={props.onActivate} /></section>
       </main>
       <SiteFooter />
       {props.accessOpen && <div className="modal-backdrop" onMouseDown={() => props.onAccessOpen(false)}><section className="access-card" onMouseDown={(event) => event.stopPropagation()}>
