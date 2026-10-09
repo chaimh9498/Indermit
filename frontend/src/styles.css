@@ -256,6 +256,9 @@ footer nav a:hover { color: #fff; }
 .bundle-model-list strong { color: #d7dce7; font-size: 10px; }
 .bundle-model-list small { color: #697283; font-size: 8px; }
 .bundle-model-list em { color: #69a8ff; font-size: 8px; font-style: normal; text-align: right; }
+.package-usage-limit { display: grid; gap: 5px; margin: 0 0 18px; padding: 13px 14px; border: 1px solid rgba(105,168,255,.22); border-radius: 9px; background: rgba(65,120,224,.08); }
+.package-usage-limit b { color: #bcd7ff; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.package-usage-limit span { color: #8995a8; font-size: 10px; line-height: 1.5; }
 .mode-card strong { color: #dfe7f0; font-size: 13px; }
 .mode-card p { margin: 5px 0 0; color: #788391; font-size: 11px; line-height: 1.5; }
 .bundle-grid { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
