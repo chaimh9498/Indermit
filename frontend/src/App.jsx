@@ -12,8 +12,6 @@ const MODELS = [
 
 const BUNDLES = [
   { id: "starter", name: "Starter", credits: 100, price: "$5" },
-  { id: "creator", name: "Creator", credits: 330, price: "$15" },
-  { id: "pro", name: "Pro", credits: 920, price: "$40" },
 ];
 
 function App() {
@@ -42,14 +40,11 @@ function App() {
 
   async function activateBeta(event) {
     event.preventDefault();
-    const code = accessCode.trim();
-    if (!code) return setAccessError("Enter your private beta access key.");
-    sessionStorage.setItem("indermit-beta-code", code);
-    if (!isSignedIn) return setAccessError("Access key saved. Sign in or create an account to activate it.");
+    if (!isSignedIn) return setAccessError("Create an account or sign in to join the public beta.");
     setAccessBusy(true);
     setAccessError("");
     try {
-      const result = await apiRequest("/v1/beta/enroll", getToken, { method: "POST", body: JSON.stringify({ code }) });
+      const result = await apiRequest("/v1/beta/enroll", getToken, { method: "POST", body: JSON.stringify({}) });
       setBeta((current) => ({ ...current, ...result, loading: false }));
       sessionStorage.removeItem("indermit-beta-code");
       setAccessOpen(false);
@@ -72,11 +67,13 @@ function Landing(props) {
       <BetaBar /><Header onAccess={() => props.onAccessOpen(true)} />
       <main>
         <section className="hero"><div className="hero-copy">
-          <div className="status-pill"><LockKeyhole size={13} /> PRIVATE BETA</div>
+          <div className="status-pill"><Sparkles size={13} /> PUBLIC BETA</div>
           <h1>AI image generation.<br /><span>All in one place.</span></h1>
           <p>Indermit brings leading AI image generators into one simple platform. Buy credits once and use them across every available model without needing to handle separate apps, subscriptions, or accounts.</p>
-          <button className="button button-primary button-large" onClick={() => props.onAccessOpen(true)}>Enter private beta <ArrowRight size={16} /></button>
+          <SignedOut><SignUpButton mode="modal"><button className="button button-primary button-large">Create an account <ArrowRight size={16} /></button></SignUpButton></SignedOut>
+          <SignedIn><button className="button button-primary button-large" onClick={props.onActivate}>Join the public beta <ArrowRight size={16} /></button></SignedIn>
         </div></section>
+        <section className="model-disclosure"><span className="section-label">AVAILABLE AT LAUNCH</span><h2>Know exactly what is included before you buy.</h2><div>{MODELS.filter((item) => item.id !== "auto").map((item) => <article key={item.id}><strong>{item.name}</strong><span>{item.provider} · {item.credits} {item.credits === 1 ? "credit" : "credits"} per image</span><em>1K · Low quality</em></article>)}</div><p>Anyone can create an Indermit account. Generation and purchasing access is limited to the first 25 public-beta members while we monitor capacity. Indermit is beginning with lower-cost model versions; higher-quality models and additional providers will be added after testing.</p></section>
         <section className="studio-preview" aria-label="Indermit Studio preview"><Composer /></section>
       </main>
       <SiteFooter />
@@ -155,7 +152,7 @@ function Studio({ getToken, beta }) {
     {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); loadAdmin(); }}><Gauge size={15} /> Owner</button>}
   </nav><div className="account-cluster"><span><strong>{account.creditBalance}</strong> credits</span><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
-    {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PRIVATE BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite is available now. Other models will be enabled as they are connected and tested.</p></div>
+    {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PUBLIC BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite, Grok Imagine 2.0 Low, and GPT Image 2.5 Sunburst Low are available now.</p></div>
       <form className="live-composer" onSubmit={generate}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder="Describe the image you want to create…" /><div className="composer-controls">
         <label className="live-select"><span><small>Model</small><strong>{activeModel.provider} · {activeModel.name}</strong></span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.provider} · {item.name}{!item.enabled ? " — Coming soon" : ` — ${item.credits} credits`}</option>)}</select><ChevronDown size={15} /></label>
         <label className="ratio-select"><span>Ratio</span><select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}><option>1:1</option><option>16:9</option><option>9:16</option></select></label>
@@ -167,7 +164,7 @@ function Studio({ getToken, beta }) {
       </article>}
     </section>}
     {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations will appear here." />}</section>}
-    {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PRIVATE BETA CHECKOUT</span><h1>Buy Indermit credits</h1><p>These are real payments processed securely by Stripe. Credits are added to your account after payment succeeds.</p></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure checkout is connected" : "Checkout is being configured"}</strong><p>{beta.stripeReady ? "Only approved private-beta members can access these packages. Failed generations are automatically refunded to your credit balance." : "Purchasing stays disabled until the live Stripe key and webhook are both available."}</p></div></div><div className="bundle-grid">{BUNDLES.map((bundle) => <article key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits</p><button disabled={!beta.stripeReady || busy} onClick={() => checkout(bundle.id)}>Buy with Stripe</button></article>)}</div></section>}
+    {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PUBLIC BETA CHECKOUT</span><h1>Buy Indermit credits</h1><p>Review the currently available models before purchasing. Credits work across every model listed below.</p></div><div className="checkout-models">{MODELS.filter((item) => item.id !== "auto").map((item) => <article key={item.id}><strong>{item.name}</strong><span>{item.provider} · 1K low quality</span><em>{item.credits} {item.credits === 1 ? "credit" : "credits"} per image</em></article>)}</div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure Stripe checkout is connected" : "Checkout is being configured"}</strong><p>{beta.stripeReady ? "Failed generations are automatically refunded. Public-beta capacity and per-account usage limits may temporarily pause generation without taking credits." : "Purchasing stays disabled until the live Stripe key and webhook are both available."}</p></div></div><div className="bundle-grid beta-bundle-grid">{BUNDLES.map((bundle) => <article key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits · one-time purchase</p><button disabled={!beta.stripeReady || busy} onClick={() => checkout(bundle.id)}>Buy with Stripe</button></article>)}</div><p className="beta-package-note">One package at a time: use your current credits before purchasing another. Larger packages will open as capacity grows.</p></section>}
     {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={loadAdmin} />}
   </main>
   {generationProgress && <div className="generation-overlay" role="dialog" aria-modal="true" aria-label="Creating your image"><div className="generation-progress-card">
@@ -187,7 +184,8 @@ function AdminView({ data, members, onAdjust, onRefresh }) {
   return <section className="workspace-panel admin-view"><div className="page-heading compact"><span>OWNER PORTAL</span><h1>Private beta operations</h1><button className="icon-button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button></div>
     <div className="metric-grid"><Metric label="Beta members" value={data.summary.betaMembers} icon={<Users />} /><Metric label="Generations" value={data.summary.generations} icon={<Sparkles />} /><Metric label="Completed" value={data.summary.completed} tone="good" /><Metric label="Failed" value={data.summary.failed} tone={data.summary.failed ? "bad" : "good"} /></div>
     <div className="admin-columns"><section className="admin-card"><h2>Model status</h2>{data.models.map((model) => <div className="status-row" key={model.id}><div><strong>{model.provider} · {model.name}</strong><span>{model.credits} credits per image</span></div><em className={model.enabled ? "online" : "offline"}>{model.enabled ? "Available" : "Coming soon"}</em></div>)}<div className="status-row"><div><strong>Stripe</strong><span>Webhook: {data.stripe.webhookReady ? "ready" : "not configured"}</span></div><em className={data.stripe.mode === "test" ? "online" : "offline"}>{data.stripe.mode}</em></div></section>
-      <section className="admin-card"><h2>Beta members</h2>{members.map((member) => <div className="member-row" key={member.user_id}><div><strong>{member.user_id}</strong><span>{member.role} · {member.credit_balance} credits</span></div><div><button onClick={() => onAdjust(member.user_id, 10)}>+10</button><button onClick={() => onAdjust(member.user_id, 100)}>+100</button></div></div>)}</section></div>
+      <section className="admin-card"><h2>Estimated provider spend today</h2>{data.providerEconomics?.map((item) => <div className="status-row" key={item.provider}><div><strong>{item.provider}</strong><span>{item.attempts} of {item.dailyLimit} attempts · about ${item.estimatedSpendUsd.toFixed(2)} spent</span></div><em className="online">${item.estimatedUnitCostUsd.toFixed(4)} / image</em></div>)}</section></div>
+    <section className="admin-card"><h2>Beta members</h2>{members.map((member) => <div className="member-row" key={member.user_id}><div><strong>{member.user_id}</strong><span>{member.role} · {member.credit_balance} credits</span></div><div><button onClick={() => onAdjust(member.user_id, 10)}>+10</button><button onClick={() => onAdjust(member.user_id, 100)}>+100</button></div></div>)}</section>
     <section className="admin-card table-card"><h2>Recent generation activity</h2><div className="activity-table"><div className="activity-head"><span>User</span><span>Model</span><span>Status</span><span>Credits</span><span>Time</span></div>{data.recentGenerations.map((item) => <div className="activity-row" key={item.id}><span>{item.user_id}</span><span>{item.provider} · {item.model}</span><span className={`activity-status ${item.status}`}>{item.status}{item.error_code ? ` · ${item.error_code}` : ""}</span><span>{item.credit_cost}</span><span>{formatDate(item.created_at)}</span></div>)}</div></section>
   </section>;
 }
@@ -196,8 +194,8 @@ function Metric({ label, value, icon, tone = "" }) { return <article className={
 function EmptyState({ icon, title, text }) { return <div className="empty-state">{icon}<h2>{title}</h2><p>{text}</p></div>; }
 function formatDate(value) { return value ? new Date(`${value.replace(" ", "T")}Z`).toLocaleString() : "—"; }
 function Composer() { return <div className="composer"><textarea disabled placeholder="Describe the image you want to create…" /><div className="composer-footer"><label className="model-menu"><span className="model-icon"><Sparkles size={15} /></span><span className="model-copy"><small>Model</small><strong>Select a model</strong></span><select disabled><option>Select a model</option></select><ChevronDown size={16} /></label><button className="generate-button" disabled><LockKeyhole size={16} /> Private beta</button></div></div>; }
-function BetaBar() { return <div className="beta-bar"><span className="beta-dot" /> INDERMIT PRIVATE BETA <span>Access is limited to invited testers.</span></div>; }
-function Header({ onAccess }) { return <header className="site-header"><a className="brand" href="/" aria-label="Indermit home"><BrandWordmark /></a><div className="header-actions"><SignedOut><SignInButton mode="modal"><button className="button button-quiet">Sign in</button></SignInButton><SignUpButton mode="modal"><button className="button button-secondary">Create account</button></SignUpButton></SignedOut><SignedIn><UserButton /></SignedIn><button className="button button-primary" onClick={onAccess}>Beta access</button></div></header>; }
+function BetaBar() { return <div className="beta-bar"><span className="beta-dot" /> INDERMIT PUBLIC BETA <span>Accounts are open. Generation and purchasing are limited to the first 25 beta members.</span></div>; }
+function Header() { return <header className="site-header"><a className="brand" href="/" aria-label="Indermit home"><BrandWordmark /></a><div className="header-actions"><SignedOut><SignInButton mode="modal"><button className="button button-quiet">Sign in</button></SignInButton><SignUpButton mode="modal"><button className="button button-secondary">Create account</button></SignUpButton></SignedOut><SignedIn><UserButton /></SignedIn></div></header>; }
 function SiteFooter() { return <footer><a className="brand footer-brand" href="/" aria-label="Indermit home"><BrandWordmark /></a><nav aria-label="Legal and support"><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="mailto:support@indermit.com">Support</a></nav></footer>; }
 function BrandWordmark() { return <img className="brand-wordmark" src="/indermit-wordmark-official.png" alt="Indermit" />; }
 
