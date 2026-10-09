@@ -6,7 +6,7 @@ import { apiRequest } from "./api";
 const MODELS = [
   { id: "auto", name: "Auto", provider: "Indermit", credits: 2, enabled: true },
   { id: "google-nano-banana", name: "Nano Banana 2 Lite", provider: "Google", credits: 2, enabled: true },
-  { id: "openai-sunburst", name: "GPT Image 2.5 Sunburst", provider: "OpenAI", credits: 1, enabled: false },
+  { id: "openai-sunburst", name: "GPT Image 2.5 Sunburst Low", provider: "OpenAI", credits: 1, enabled: true },
   { id: "xai-imagine", name: "Grok Imagine 2.0 Low", provider: "xAI", credits: 2, enabled: true },
 ];
 
