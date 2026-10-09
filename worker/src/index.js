@@ -392,10 +392,17 @@ async function createGeneration(request, env, userId, apiOrigin) {
 }
 
 async function checkGenerationLimits(env, userId, provider) {
+  const hourlyResetAt = env.HOURLY_LIMIT_RESET_AT || "1970-01-01T00:00:00Z";
   const [processing, globalProcessing, hourly, daily, providerDaily] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND status = 'processing'").bind(userId).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'processing'").first(),
-    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND created_at >= datetime('now', '-1 hour')").bind(userId).first(),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS count FROM generations WHERE user_id = ?
+       AND created_at >= CASE
+         WHEN datetime('now', '-1 hour') > datetime(?) THEN datetime('now', '-1 hour')
+         ELSE datetime(?)
+       END`,
+    ).bind(userId, hourlyResetAt, hourlyResetAt).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND created_at >= datetime('now', 'start of day')").bind(userId).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE provider = ? AND created_at >= datetime('now', 'start of day')").bind(provider).first(),
   ]);
