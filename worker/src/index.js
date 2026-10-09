@@ -14,6 +14,8 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/v1/health") {
         response = json({ ok: true, service: "indermit-api", privateBeta: env.PRIVATE_BETA === "true" });
+      } else if (request.method === "GET" && url.pathname === "/v1/promotions/signup-bonus") {
+        response = await getPublicSignupPromotion(env);
       } else if (request.method === "POST" && url.pathname === "/v1/webhooks/stripe") {
         response = await handleStripeWebhook(request, env);
       } else if (request.method === "GET" && url.pathname.startsWith("/v1/images/")) {
@@ -35,6 +37,15 @@ export default {
   },
 };
 
+async function getPublicSignupPromotion(env) {
+  const maximum = positiveInteger(env.SIGNUP_BONUS_USERS, 25);
+  const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM signup_credit_grants").first();
+  return json({
+    available: Number(count?.count || 0) < maximum,
+    credits: positiveInteger(env.SIGNUP_BONUS_CREDITS, 2),
+  });
+}
+
 async function handleAuthenticated(request, env, _context, { userId }) {
   const url = new URL(request.url);
   await ensureUser(env, userId);
@@ -45,7 +56,10 @@ async function handleAuthenticated(request, env, _context, { userId }) {
 
   const member = await getBetaMember(env, userId);
   if (request.method === "GET" && url.pathname === "/v1/beta/me") {
-    const capacity = await getPaidBetaCapacity(env, userId);
+    const [capacity, signupPromotion] = await Promise.all([
+      getPaidBetaCapacity(env, userId),
+      getSignupCreditPromotion(env, userId),
+    ]);
     return json({
       enrolled: Boolean(member),
       role: member?.role || null,
@@ -53,6 +67,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
       stripeMode: env.STRIPE_MODE || "test",
       publicBeta: env.PRIVATE_BETA !== "true",
       ...capacity,
+      ...signupPromotion,
     });
   }
 
@@ -157,6 +172,20 @@ async function getPaidBetaCapacity(env, userId) {
   };
 }
 
+async function getSignupCreditPromotion(env, userId) {
+  const maximum = positiveInteger(env.SIGNUP_BONUS_USERS, 25);
+  const [count, grant] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count FROM signup_credit_grants").first(),
+    env.DB.prepare("SELECT credits FROM signup_credit_grants WHERE user_id = ?").bind(userId).first(),
+  ]);
+  const claimed = Number(count?.count || 0);
+  return {
+    signupBonusCredits: positiveInteger(env.SIGNUP_BONUS_CREDITS, 2),
+    signupBonusRemaining: Math.max(0, maximum - claimed),
+    receivedSignupBonus: Boolean(grant),
+  };
+}
+
 async function beginPaidBetaCheckout(env, userId, bundleId, creditBalance) {
   if (creditBalance > 0) throw new Error("Use your current credits before purchasing another package.");
   await env.DB.batch([
@@ -206,8 +235,9 @@ async function beginPaidBetaCheckout(env, userId, bundleId, creditBalance) {
 
 async function handleAdmin(request, env, _userId, url) {
   if (request.method === "GET" && url.pathname === "/v1/admin/status") {
-    const [users, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
+    const [users, signupBonusUsers, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM signup_credit_grants").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM paid_beta_slots WHERE status = 'paid'").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'completed'").first(),
@@ -225,6 +255,7 @@ async function handleAdmin(request, env, _userId, url) {
     return json({
       summary: {
         betaMembers: users?.count || 0,
+        signupBonusUsers: signupBonusUsers?.count || 0,
         paidBetaUsers: paidUsers?.count || 0,
         generations: generations?.count || 0,
         completed: completed?.count || 0,
@@ -289,9 +320,30 @@ function maskUserId(userId = "") {
 }
 
 async function ensureUser(env, userId) {
-  await env.DB.prepare(
-    "INSERT OR IGNORE INTO users (user_id, free_generations_remaining) VALUES (?, 5)",
+  const created = await env.DB.prepare(
+    "INSERT OR IGNORE INTO users (user_id, free_generations_remaining) VALUES (?, 0)",
   ).bind(userId).run();
+  if (!created.meta?.changes) return;
+
+  const maximum = positiveInteger(env.SIGNUP_BONUS_USERS, 25);
+  const credits = positiveInteger(env.SIGNUP_BONUS_CREDITS, 2);
+  const referenceId = `signup-bonus:${userId}`;
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO signup_credit_grants (user_id, credits)
+       SELECT ?, ? WHERE (SELECT COUNT(*) FROM signup_credit_grants) < ?`,
+    ).bind(userId, credits, maximum),
+    env.DB.prepare(
+      `UPDATE users SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ?
+       AND EXISTS (SELECT 1 FROM signup_credit_grants WHERE user_id = ?)
+       AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE reference_id = ?)`,
+    ).bind(credits, userId, userId, referenceId),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
+       SELECT ?, ?, ?, 'adjustment', ?, 'Launch signup bonus' WHERE changes() = 1`,
+    ).bind(crypto.randomUUID(), userId, credits, referenceId),
+  ]);
 }
 
 async function createGeneration(request, env, userId, apiOrigin) {
