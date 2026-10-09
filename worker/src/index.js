@@ -45,12 +45,14 @@ async function handleAuthenticated(request, env, _context, { userId }) {
 
   const member = await getBetaMember(env, userId);
   if (request.method === "GET" && url.pathname === "/v1/beta/me") {
+    const capacity = await getPaidBetaCapacity(env, userId);
     return json({
       enrolled: Boolean(member),
       role: member?.role || null,
       stripeReady: isStripeReady(env),
       stripeMode: env.STRIPE_MODE || "test",
       publicBeta: env.PRIVATE_BETA !== "true",
+      ...capacity,
     });
   }
 
@@ -81,8 +83,12 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   if (request.method === "POST" && url.pathname === "/v1/billing/checkout") {
     const input = await request.json();
     const account = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
-    const session = await createCheckoutSession(env, userId, input.bundleId, account?.credit_balance || 0);
-    return json({ url: session.url });
+    try {
+      const session = await beginPaidBetaCheckout(env, userId, input.bundleId, account?.credit_balance || 0);
+      return json({ url: session.url });
+    } catch (error) {
+      return json({ error: error.message || "Checkout is unavailable right now." }, 409);
+    }
   }
 
   if (request.method === "GET" && url.pathname === "/v1/generations") {
@@ -106,13 +112,9 @@ async function enrollBetaMember(request, env, userId) {
   if (env.PRIVATE_BETA !== "true") {
     const existing = await getBetaMember(env, userId);
     if (existing) return json({ enrolled: true, role: existing.role });
-    const maximum = positiveInteger(env.MAX_BETA_MEMBERS, 25);
-    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first();
-    if ((count?.count || 0) >= maximum) {
-      return json({ error: "Your account is ready, but the first 25 public-beta places are full. More generation and purchasing access will open soon." }, 503);
-    }
     await env.DB.prepare("INSERT OR IGNORE INTO beta_members (user_id, role) VALUES (?, 'tester')").bind(userId).run();
-    return json({ enrolled: true, role: "tester" });
+    const capacity = await getPaidBetaCapacity(env, userId);
+    return json({ enrolled: true, role: "tester", ...capacity });
   }
   const { code = "" } = await request.json();
   if (typeof code !== "string" || code.length < 12 || code.length > 200) {
@@ -138,10 +140,75 @@ async function getBetaMember(env, userId) {
   return env.DB.prepare("SELECT role, joined_at, last_seen_at FROM beta_members WHERE user_id = ?").bind(userId).first();
 }
 
+async function getPaidBetaCapacity(env, userId) {
+  const maximum = positiveInteger(env.MAX_PAID_BETA_USERS, 25);
+  const [count, slot] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count FROM paid_beta_slots WHERE status = 'paid'").first(),
+    env.DB.prepare("SELECT status FROM paid_beta_slots WHERE user_id = ?").bind(userId).first(),
+  ]);
+  const paidBetaCount = Number(count?.count || 0);
+  const hasPaidBetaAccess = slot?.status === "paid";
+  return {
+    paidBetaCount,
+    paidBetaLimit: maximum,
+    paidBetaRemaining: Math.max(0, maximum - paidBetaCount),
+    hasPaidBetaAccess,
+    purchaseEligible: hasPaidBetaAccess || paidBetaCount < maximum,
+  };
+}
+
+async function beginPaidBetaCheckout(env, userId, bundleId, creditBalance) {
+  if (creditBalance > 0) throw new Error("Use your current credits before purchasing another package.");
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM checkout_locks WHERE expires_at <= CURRENT_TIMESTAMP"),
+    env.DB.prepare(
+      `DELETE FROM paid_beta_slots WHERE status = 'reserved'
+       AND reserved_at <= datetime('now', '-30 minutes')
+       AND user_id NOT IN (SELECT user_id FROM checkout_locks)`,
+    ),
+  ]);
+
+  const activeLock = await env.DB.prepare(
+    "SELECT checkout_url FROM checkout_locks WHERE user_id = ? AND expires_at > CURRENT_TIMESTAMP",
+  ).bind(userId).first();
+  if (activeLock?.checkout_url) return { url: activeLock.checkout_url };
+
+  const maximum = positiveInteger(env.MAX_PAID_BETA_USERS, 25);
+  let slot = await env.DB.prepare("SELECT status FROM paid_beta_slots WHERE user_id = ?").bind(userId).first();
+  if (!slot) {
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO paid_beta_slots (user_id, status)
+       SELECT ?, 'reserved' WHERE (SELECT COUNT(*) FROM paid_beta_slots) < ?`,
+    ).bind(userId, maximum).run();
+    slot = await env.DB.prepare("SELECT status FROM paid_beta_slots WHERE user_id = ?").bind(userId).first();
+  }
+  if (!slot) throw new Error("All 25 public-beta purchasing places have been claimed. More will open after the beta expands.");
+
+  try {
+    const session = await createCheckoutSession(env, userId, bundleId, creditBalance);
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO checkout_locks (user_id, checkout_session_id, checkout_url, expires_at)
+         VALUES (?, ?, ?, datetime('now', '+30 minutes'))`,
+      ).bind(userId, session.id, session.url),
+      env.DB.prepare(
+        "UPDATE paid_beta_slots SET checkout_session_id = ?, reserved_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+      ).bind(session.id, userId),
+    ]);
+    return session;
+  } catch (error) {
+    if (slot.status === "reserved") {
+      await env.DB.prepare("DELETE FROM paid_beta_slots WHERE user_id = ? AND status = 'reserved'").bind(userId).run();
+    }
+    throw error;
+  }
+}
+
 async function handleAdmin(request, env, _userId, url) {
   if (request.method === "GET" && url.pathname === "/v1/admin/status") {
-    const [users, generations, completed, failed, recent, providerUsage] = await Promise.all([
+    const [users, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM paid_beta_slots WHERE status = 'paid'").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'completed'").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'failed'").first(),
@@ -158,6 +225,7 @@ async function handleAdmin(request, env, _userId, url) {
     return json({
       summary: {
         betaMembers: users?.count || 0,
+        paidBetaUsers: paidUsers?.count || 0,
         generations: generations?.count || 0,
         completed: completed?.count || 0,
         failed: failed?.count || 0,
@@ -469,6 +537,13 @@ async function handleStripeWebhook(request, env) {
       `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
        SELECT ?, ?, ?, 'purchase', ?, 'Stripe credit purchase' WHERE changes() = 1`,
     ).bind(crypto.randomUUID(), userId, credits, `stripe:${event.id}`),
+    env.DB.prepare(
+      `INSERT INTO paid_beta_slots (user_id, status, checkout_session_id, paid_at)
+       VALUES (?, 'paid', ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id) DO UPDATE SET status = 'paid', checkout_session_id = excluded.checkout_session_id,
+       paid_at = COALESCE(paid_beta_slots.paid_at, CURRENT_TIMESTAMP)`,
+    ).bind(userId, session.id),
+    env.DB.prepare("DELETE FROM checkout_locks WHERE user_id = ?").bind(userId),
   ]);
   return json({ received: true });
 }

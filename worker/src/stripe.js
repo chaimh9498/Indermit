@@ -18,6 +18,7 @@ export async function createCheckoutSession(env, userId, bundleId, currentBalanc
   }
   const params = new URLSearchParams({
     mode: "payment",
+    expires_at: String(Math.floor(Date.now() / 1000) + 1800),
     client_reference_id: userId,
     customer_creation: "always",
     success_url: `${env.FRONTEND_URL}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
@@ -26,6 +27,7 @@ export async function createCheckoutSession(env, userId, bundleId, currentBalanc
     "line_items[0][price_data][currency]": "usd",
     "line_items[0][price_data][unit_amount]": String(bundle.cents),
     "line_items[0][price_data][product_data][name]": `Indermit ${bundle.name}`,
+    "line_items[0][price_data][product_data][description]": "100 credits for Nano Banana 2 Lite, GPT Image 2.5 Sunburst Low, and Grok Imagine 2.0 Low.",
     "metadata[user_id]": userId,
     "metadata[bundle_id]": bundleId,
     "metadata[credits]": String(bundle.credits),
