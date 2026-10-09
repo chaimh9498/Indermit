@@ -2,21 +2,53 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { ClerkProvider } from "@clerk/clerk-react";
 import App from "./App";
+import { API_URL } from "./api";
 import "./styles.css";
 
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {clerkKey ? (
-      <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/">
-        <App />
-      </ClerkProvider>
-    ) : (
-      <SetupPage />
-    )}
+    <Root />
   </React.StrictMode>,
 );
+
+function Root() {
+  const [signupBonusAvailable, setSignupBonusAvailable] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    const checkOffer = async () => {
+      try {
+        const response = await fetch(`${API_URL}/v1/promotions/signup-bonus`);
+        const offer = await response.json();
+        if (active) setSignupBonusAvailable(response.ok && offer.available === true);
+      } catch {
+        if (active) setSignupBonusAvailable(false);
+      }
+    };
+    checkOffer();
+    const timer = window.setInterval(checkOffer, 15000);
+    const refreshOffer = () => { if (document.visibilityState === "visible") checkOffer(); };
+    document.addEventListener("visibilitychange", refreshOffer);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshOffer);
+    };
+  }, []);
+
+  if (!clerkKey) return <SetupPage />;
+  const localization = signupBonusAvailable ? {
+    signUp: {
+      start: {
+        title: "Sign up to receive 2 free credits",
+        subtitle: "Available during the limited launch offer.",
+      },
+    },
+  } : undefined;
+  return <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/" localization={localization}><App /></ClerkProvider>;
+}
 
 function SetupPage() {
   return (
