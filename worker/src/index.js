@@ -50,11 +50,12 @@ async function handleAuthenticated(request, env, _context, { userId }) {
       role: member?.role || null,
       stripeReady: isStripeReady(env),
       stripeMode: env.STRIPE_MODE || "test",
+      publicBeta: env.PRIVATE_BETA !== "true",
     });
   }
 
-  if (env.PRIVATE_BETA === "true" && !member) {
-    return json({ error: "A private beta invitation is required." }, 403);
+  if (!member) {
+    return json({ error: "Join the public beta before continuing." }, 403);
   }
 
   if (member) {
@@ -79,7 +80,8 @@ async function handleAuthenticated(request, env, _context, { userId }) {
 
   if (request.method === "POST" && url.pathname === "/v1/billing/checkout") {
     const input = await request.json();
-    const session = await createCheckoutSession(env, userId, input.bundleId);
+    const account = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
+    const session = await createCheckoutSession(env, userId, input.bundleId, account?.credit_balance || 0);
     return json({ url: session.url });
   }
 
@@ -101,7 +103,17 @@ async function handleAuthenticated(request, env, _context, { userId }) {
 }
 
 async function enrollBetaMember(request, env, userId) {
-  if (env.PRIVATE_BETA !== "true") return json({ enrolled: true, role: "tester" });
+  if (env.PRIVATE_BETA !== "true") {
+    const existing = await getBetaMember(env, userId);
+    if (existing) return json({ enrolled: true, role: existing.role });
+    const maximum = positiveInteger(env.MAX_BETA_MEMBERS, 25);
+    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first();
+    if ((count?.count || 0) >= maximum) {
+      return json({ error: "Your account is ready, but the first 25 public-beta places are full. More generation and purchasing access will open soon." }, 503);
+    }
+    await env.DB.prepare("INSERT OR IGNORE INTO beta_members (user_id, role) VALUES (?, 'tester')").bind(userId).run();
+    return json({ enrolled: true, role: "tester" });
+  }
   const { code = "" } = await request.json();
   if (typeof code !== "string" || code.length < 12 || code.length > 200) {
     return json({ error: "Enter a valid beta access key." }, 400);
@@ -128,7 +140,7 @@ async function getBetaMember(env, userId) {
 
 async function handleAdmin(request, env, _userId, url) {
   if (request.method === "GET" && url.pathname === "/v1/admin/status") {
-    const [users, generations, completed, failed, recent] = await Promise.all([
+    const [users, generations, completed, failed, recent, providerUsage] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'completed'").first(),
@@ -137,7 +149,12 @@ async function handleAdmin(request, env, _userId, url) {
         `SELECT id, user_id, provider, model, status, credit_cost, error_code, created_at, completed_at
          FROM generations ORDER BY created_at DESC LIMIT 40`,
       ).all(),
+      env.DB.prepare(
+        `SELECT provider, COUNT(*) AS count FROM generations
+         WHERE created_at >= datetime('now', 'start of day') GROUP BY provider`,
+      ).all(),
     ]);
+    const usage = Object.fromEntries(providerUsage.results.map((item) => [item.provider, Number(item.count)]));
     return json({
       summary: {
         betaMembers: users?.count || 0,
@@ -148,13 +165,18 @@ async function handleAdmin(request, env, _userId, url) {
       models: [
         { id: "auto", name: "Auto", provider: "Indermit", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG.auto.credits },
         { id: "google-nano-banana", name: "Nano Banana 2 Lite", provider: "Google", enabled: Boolean(env.GOOGLE_API_KEY), credits: MODEL_CONFIG["google-nano-banana"].credits },
-        { id: "openai-sunburst", name: "Image generation", provider: "OpenAI", enabled: false, credits: MODEL_CONFIG["openai-sunburst"].credits },
-        { id: "xai-imagine", name: "Imagine", provider: "xAI", enabled: false, credits: MODEL_CONFIG["xai-imagine"].credits },
+        { id: "openai-sunburst", name: "GPT Image 2.5 Sunburst Low", provider: "OpenAI", enabled: Boolean(env.OPENAI_API_KEY), credits: MODEL_CONFIG["openai-sunburst"].credits },
+        { id: "xai-imagine", name: "Grok Imagine 2.0 Low", provider: "xAI", enabled: Boolean(env.XAI_API_KEY), credits: MODEL_CONFIG["xai-imagine"].credits },
       ],
       stripe: {
         mode: isStripeReady(env) ? env.STRIPE_MODE || "test" : "not configured",
         webhookReady: Boolean(env.STRIPE_WEBHOOK_SECRET),
       },
+      providerEconomics: [
+        providerEconomics("OpenAI", usage.OpenAI || 0, 0.007, positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 200)),
+        providerEconomics("Google", usage.Google || 0, 0.0336, positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 50)),
+        providerEconomics("xAI", usage.xAI || 0, 0.04, positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 50)),
+      ],
       recentGenerations: recent.results.map((item) => ({
         ...item,
         user_id: maskUserId(item.user_id),
@@ -208,6 +230,8 @@ async function createGeneration(request, env, userId, apiOrigin) {
   const parsed = parseGeneration(await request.json());
   if (parsed.error) return parsed.error;
   const { input, prompt, aspectRatio, config } = parsed;
+  const limitError = await checkGenerationLimits(env, userId, config.provider);
+  if (limitError) return limitError;
   const generationId = crypto.randomUUID();
   const account = await env.DB.prepare(
     "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
@@ -245,6 +269,52 @@ async function createGeneration(request, env, userId, apiOrigin) {
     creditBalance: user.credit_balance,
     freeGenerationsRemaining: env.FREE_GENERATIONS_ENABLED === "true" ? user.free_generations_remaining : 0,
   }, 201);
+}
+
+async function checkGenerationLimits(env, userId, provider) {
+  const [processing, globalProcessing, hourly, daily, providerDaily] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND status = 'processing'").bind(userId).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'processing'").first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND created_at >= datetime('now', '-1 hour')").bind(userId).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND created_at >= datetime('now', 'start of day')").bind(userId).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE provider = ? AND created_at >= datetime('now', 'start of day')").bind(provider).first(),
+  ]);
+  if ((processing?.count || 0) >= positiveInteger(env.MAX_CONCURRENT_GENERATIONS, 1)) {
+    return json({ error: "Wait for your current image to finish before starting another." }, 429);
+  }
+  if ((globalProcessing?.count || 0) >= positiveInteger(env.MAX_GLOBAL_CONCURRENT_GENERATIONS, 3)) {
+    return json({ error: "The beta is busy right now. Please try again in a moment." }, 429);
+  }
+  if ((hourly?.count || 0) >= positiveInteger(env.MAX_GENERATIONS_PER_HOUR, 10)) {
+    return json({ error: "You reached the public-beta hourly limit. Try again later." }, 429);
+  }
+  if ((daily?.count || 0) >= positiveInteger(env.MAX_GENERATIONS_PER_DAY, 30)) {
+    return json({ error: "You reached today's public-beta generation limit." }, 429);
+  }
+  const providerLimit = provider === "OpenAI"
+    ? positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 200)
+    : provider === "xAI"
+      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 50)
+      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 50);
+  if ((providerDaily?.count || 0) >= providerLimit) {
+    return json({ error: `${provider} reached today's public-beta capacity. No credits were charged.` }, 503);
+  }
+  return null;
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function providerEconomics(provider, attempts, estimatedUnitCostUsd, dailyLimit) {
+  return {
+    provider,
+    attempts,
+    dailyLimit,
+    estimatedUnitCostUsd,
+    estimatedSpendUsd: Number((attempts * estimatedUnitCostUsd).toFixed(4)),
+  };
 }
 
 function parseGeneration(input) {

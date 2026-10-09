@@ -2,11 +2,9 @@ import { constantTimeEqual, hmacHex } from "./utils.js";
 
 export const CREDIT_BUNDLES = {
   starter: { name: "Starter credits", credits: 100, cents: 500 },
-  creator: { name: "Creator credits", credits: 330, cents: 1500 },
-  pro: { name: "Pro credits", credits: 920, cents: 4000 },
 };
 
-export async function createCheckoutSession(env, userId, bundleId) {
+export async function createCheckoutSession(env, userId, bundleId, currentBalance = 0) {
   if (!env.STRIPE_SECRET_KEY) throw new Error("Payments are not configured yet");
   const acceptedPrefixes = env.STRIPE_MODE === "live" ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
   if (!acceptedPrefixes.some((prefix) => env.STRIPE_SECRET_KEY.startsWith(prefix))) {
@@ -14,6 +12,10 @@ export async function createCheckoutSession(env, userId, bundleId) {
   }
   const bundle = CREDIT_BUNDLES[bundleId];
   if (!bundle) throw new Error("Unknown credit package");
+  const maxAccountCredits = Number(env.MAX_ACCOUNT_CREDITS || 200);
+  if (currentBalance + bundle.credits > maxAccountCredits) {
+    throw new Error(`Public beta accounts may hold up to ${maxAccountCredits} credits at a time`);
+  }
   const params = new URLSearchParams({
     mode: "payment",
     client_reference_id: userId,
