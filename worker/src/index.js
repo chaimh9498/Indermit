@@ -247,11 +247,38 @@ async function handleAdmin(request, env, _userId, url) {
          FROM generations ORDER BY created_at DESC LIMIT 40`,
       ).all(),
       env.DB.prepare(
-        `SELECT provider, COUNT(*) AS count FROM generations
-         WHERE created_at >= datetime('now', 'start of day') GROUP BY provider`,
+        `SELECT provider, model,
+                COUNT(*) AS attempts,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status = 'completed' THEN credit_cost ELSE 0 END) AS credits_charged,
+                SUM(CASE WHEN created_at >= datetime('now', 'start of day') THEN 1 ELSE 0 END) AS today_attempts,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN 1 ELSE 0 END) AS today_completed,
+                SUM(CASE WHEN status = 'failed' AND created_at >= datetime('now', 'start of day') THEN 1 ELSE 0 END) AS today_failed,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN credit_cost ELSE 0 END) AS today_credits_charged,
+                SUM(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS seven_day_attempts,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS seven_day_completed,
+                SUM(CASE WHEN status = 'failed' AND created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS seven_day_failed,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN credit_cost ELSE 0 END) AS seven_day_credits_charged,
+                SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS thirty_day_attempts,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS thirty_day_completed,
+                SUM(CASE WHEN status = 'failed' AND created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS thirty_day_failed,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN credit_cost ELSE 0 END) AS thirty_day_credits_charged
+         FROM generations GROUP BY provider, model ORDER BY provider, model`,
       ).all(),
     ]);
-    const usage = Object.fromEntries(providerUsage.results.map((item) => [item.provider, Number(item.count)]));
+    const providerCosts = {
+      OpenAI: nonNegativeNumber(env.OPENAI_ESTIMATED_IMAGE_COST_USD, 0.007),
+      Google: nonNegativeNumber(env.GOOGLE_ESTIMATED_IMAGE_COST_USD, 0.0336),
+      xAI: nonNegativeNumber(env.XAI_ESTIMATED_IMAGE_COST_USD, 0.04),
+    };
+    const providerLimits = {
+      OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 200),
+      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 50),
+      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 50),
+    };
+    const usageDashboard = buildUsageDashboard(providerUsage.results, providerCosts, providerLimits);
     return json({
       summary: {
         betaMembers: users?.count || 0,
@@ -271,11 +298,7 @@ async function handleAdmin(request, env, _userId, url) {
         mode: isStripeReady(env) ? env.STRIPE_MODE || "test" : "not configured",
         webhookReady: Boolean(env.STRIPE_WEBHOOK_SECRET),
       },
-      providerEconomics: [
-        providerEconomics("OpenAI", usage.OpenAI || 0, 0.007, positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 200)),
-        providerEconomics("Google", usage.Google || 0, 0.0336, positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 50)),
-        providerEconomics("xAI", usage.xAI || 0, 0.04, positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 50)),
-      ],
+      usage: usageDashboard,
       recentGenerations: recent.results.map((item) => ({
         ...item,
         user_id: maskUserId(item.user_id),
@@ -434,14 +457,81 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function providerEconomics(provider, attempts, estimatedUnitCostUsd, dailyLimit) {
-  return {
-    provider,
-    attempts,
-    dailyLimit,
-    estimatedUnitCostUsd,
-    estimatedSpendUsd: Number((attempts * estimatedUnitCostUsd).toFixed(4)),
+function nonNegativeNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function buildUsageDashboard(rows, providerCosts, providerLimits) {
+  const modelNames = {
+    auto: "Auto (Google)",
+    "google-nano-banana": "Nano Banana 2 Lite",
+    "openai-sunburst": "GPT Image 2.5 Sunburst Low",
+    "xai-imagine": "Grok Imagine 2.0 Low",
   };
+  const number = (value) => Number(value || 0);
+  const period = (row, prefix = "") => ({
+    attempts: number(row[`${prefix}attempts`]),
+    completed: number(row[`${prefix}completed`]),
+    failed: number(row[`${prefix}failed`]),
+    creditsCharged: number(row[`${prefix}credits_charged`]),
+  });
+  const models = rows.map((row) => {
+    const unitCostUsd = providerCosts[row.provider] || 0;
+    const allTime = period(row);
+    const today = period(row, "today_");
+    const sevenDays = period(row, "seven_day_");
+    const thirtyDays = period(row, "thirty_day_");
+    return {
+      provider: row.provider,
+      model: row.model,
+      modelName: modelNames[row.model] || row.model,
+      unitCostUsd,
+      processing: number(row.processing),
+      today: { ...today, estimatedSpendUsd: money(today.completed * unitCostUsd) },
+      sevenDays: { ...sevenDays, estimatedSpendUsd: money(sevenDays.completed * unitCostUsd) },
+      thirtyDays: { ...thirtyDays, estimatedSpendUsd: money(thirtyDays.completed * unitCostUsd) },
+      allTime: { ...allTime, estimatedSpendUsd: money(allTime.completed * unitCostUsd) },
+    };
+  });
+  const providers = ["Google", "OpenAI", "xAI"].map((provider) => {
+    const providerModels = models.filter((item) => item.provider === provider);
+    const totals = (key) => providerModels.reduce((sum, item) => ({
+      attempts: sum.attempts + item[key].attempts,
+      completed: sum.completed + item[key].completed,
+      failed: sum.failed + item[key].failed,
+      creditsCharged: sum.creditsCharged + item[key].creditsCharged,
+      estimatedSpendUsd: money(sum.estimatedSpendUsd + item[key].estimatedSpendUsd),
+    }), { attempts: 0, completed: 0, failed: 0, creditsCharged: 0, estimatedSpendUsd: 0 });
+    return {
+      provider,
+      dailyLimit: providerLimits[provider],
+      unitCostUsd: providerCosts[provider],
+      processing: providerModels.reduce((sum, item) => sum + item.processing, 0),
+      today: totals("today"),
+      sevenDays: totals("sevenDays"),
+      thirtyDays: totals("thirtyDays"),
+      allTime: totals("allTime"),
+    };
+  });
+  const totalSpend = (key) => money(providers.reduce((sum, item) => sum + item[key].estimatedSpendUsd, 0));
+  return {
+    currency: "USD",
+    timezone: "UTC",
+    note: "Estimated from completed Indermit generations. Provider billing balances may differ.",
+    estimatedSpend: {
+      today: totalSpend("today"),
+      sevenDays: totalSpend("sevenDays"),
+      thirtyDays: totalSpend("thirtyDays"),
+      allTime: totalSpend("allTime"),
+    },
+    providers,
+    models,
+  };
+}
+
+function money(value) {
+  return Number(Number(value || 0).toFixed(4));
 }
 
 function parseGeneration(input) {
