@@ -274,9 +274,9 @@ async function handleAdmin(request, env, _userId, url) {
       xAI: nonNegativeNumber(env.XAI_ESTIMATED_IMAGE_COST_USD, 0.04),
     };
     const providerLimits = {
-      OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 200),
-      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 50),
-      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 50),
+      OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 750),
+      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 300),
+      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 450),
     };
     const usageDashboard = buildUsageDashboard(providerUsage.results, providerCosts, providerLimits);
     return json({
@@ -442,10 +442,10 @@ async function checkGenerationLimits(env, userId, provider) {
     return json({ error: "You reached today's public-beta generation limit." }, 429);
   }
   const providerLimit = provider === "OpenAI"
-    ? positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 200)
+    ? positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 750)
     : provider === "xAI"
-      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 50)
-      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 50);
+      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 450)
+      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 300);
   if ((providerDaily?.count || 0) >= providerLimit) {
     return json({ error: `${provider} reached today's public-beta capacity. No credits were charged.` }, 503);
   }
