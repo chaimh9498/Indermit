@@ -127,7 +127,8 @@ function Studio({ getToken, beta }) {
           prompt: submittedPrompt,
           model,
           aspectRatio,
-          inputImage: sourceImage ? { mimeType: sourceImage.mimeType, data: sourceImage.base64 } : undefined,
+          inputImage: sourceImage?.base64 ? { mimeType: sourceImage.mimeType, data: sourceImage.base64 } : undefined,
+          sourceGenerationId: sourceImage?.generationId,
         }),
       });
       setAccount((current) => ({ ...current, creditBalance: result.creditBalance }));
@@ -157,6 +158,17 @@ function Studio({ getToken, beta }) {
       setSourceImage({ name: file.name, mimeType: file.type, base64, previewUrl: dataUrl, size: file.size });
     };
     reader.readAsDataURL(file);
+  }
+
+  function editGeneratedImage(item) {
+    setView("create");
+    setLatestGeneration(null);
+    setPrompt("");
+    setModel(MODELS.some((candidate) => candidate.id === item.model && candidate.enabled) ? item.model : "auto");
+    setAspectRatio(["1:1", "16:9", "9:16"].includes(item.aspectRatio) ? item.aspectRatio : "1:1");
+    setSourceImage({ generationId: item.id, previewUrl: item.imageUrl, name: "Indermit image" });
+    setMessage("Describe what you want to change, then select Edit.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function checkout(bundleId) {
@@ -189,7 +201,7 @@ function Studio({ getToken, beta }) {
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
     {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PUBLIC BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite, Grok Imagine 2.0 Low, and GPT Image 2.5 Sunburst Low are available now.</p></div>
       <form className="live-composer" onSubmit={generate}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder={sourceImage ? "Describe how you want to edit this image…" : "Describe the image you want to create…"} />
-        {sourceImage && <div className="source-image-preview"><img src={sourceImage.previewUrl} alt="Upload preview" /><div><strong>Editing this image</strong><span>{sourceImage.name} · {(sourceImage.size / 1024 / 1024).toFixed(2)} MB</span></div><button type="button" onClick={() => setSourceImage(null)} aria-label="Remove uploaded image"><X size={15} /></button></div>}
+        {sourceImage && <div className="source-image-preview"><img src={sourceImage.previewUrl} alt="Image selected for editing" /><div><strong>Editing this image</strong><span>{sourceImage.generationId ? "Generated with Indermit" : `${sourceImage.name} · ${(sourceImage.size / 1024 / 1024).toFixed(2)} MB`}</span></div><button type="button" onClick={() => setSourceImage(null)} aria-label="Remove selected image"><X size={15} /></button></div>}
         <div className="composer-controls">
         <label className="upload-control"><Paperclip size={16} /><span>{sourceImage ? "Change" : "Upload"}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseSourceImage} /></label>
         <label className="live-select"><span><small>Model</small><strong>{activeModel.provider} · {activeModel.name}</strong></span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.provider} · {item.name}{!item.enabled ? " — Coming soon" : ` — ${item.credits} credits`}</option>)}</select><ChevronDown size={15} /></label>
@@ -198,10 +210,10 @@ function Studio({ getToken, beta }) {
       </div></form>
       {latestGeneration && <article className="inline-result" key={latestGeneration.id}>
         <div className="inline-result-image"><img src={latestGeneration.imageUrl} alt={latestGeneration.prompt} /></div>
-        <div className="inline-result-details"><span>{latestGeneration.operationType === "edit" ? "EDITED" : "CREATED"} WITH {latestGeneration.provider.toUpperCase()}</span><h2>Your image is ready</h2><p>{latestGeneration.prompt}</p><div><a href={latestGeneration.downloadUrl}>Download image</a><button onClick={() => setLatestGeneration(null)}>Create another</button></div></div>
+        <div className="inline-result-details"><span>{latestGeneration.operationType === "edit" ? "EDITED" : "CREATED"} WITH {latestGeneration.provider.toUpperCase()}</span><h2>Your image is ready</h2><p>{latestGeneration.prompt}</p><div><a href={latestGeneration.downloadUrl}>Download image</a><button className="edit-result-button" onClick={() => editGeneratedImage(latestGeneration)}>Edit this image</button><button onClick={() => setLatestGeneration(null)}>Create another</button></div></div>
       </article>}
     </section>}
-    {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.operationType === "edit" ? "Edit" : "Generation"} · {item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations and edits will appear here." />}</section>}
+    {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.operationType === "edit" ? "Edit" : "Generation"} · {item.provider} · {item.creditCost} credits</span><div className="image-card-actions"><a href={item.downloadUrl}>Download</a><button onClick={() => editGeneratedImage(item)}>Edit</button></div></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations and edits will appear here." />}</section>}
     {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PUBLIC BETA CHECKOUT</span><h1>Buy Indermit credits</h1></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure Stripe checkout is connected" : "Checkout is being configured"}</strong>{!beta.stripeReady && <p>Purchasing stays disabled until the live Stripe key and webhook are both available.</p>}</div></div><div className="bundle-grid beta-bundle-grid">{BUNDLES.map((bundle) => <article className="beta-package" key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits · one-time purchase</p><div className="bundle-model-list"><b>Generate or edit with</b>{MODELS.filter((item) => item.id !== "auto").map((item) => <div key={item.id}><span><strong>{item.name}</strong><small>{item.provider} · 1K low quality</small></span><em>{item.credits} {item.credits === 1 ? "credit" : "credits"} / image</em></div>)}</div><div className="package-usage-limit"><b>Public-beta usage limits</b><span>Up to 20 completed images per hour and 60 completed images per day, per account.</span></div><button disabled={!beta.stripeReady || busy || account.creditBalance > 0 || beta.purchaseEligible === false} onClick={() => checkout(bundle.id)}>Buy 100 credits</button></article>)}</div><p className="beta-package-note">One package at a time: use your current credits before purchasing another. Accounts remain open after all 25 purchasing places are claimed.</p></section>}
     {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={refreshAdmin} refreshing={adminRefreshing} updatedAt={adminUpdatedAt} />}
   </main>

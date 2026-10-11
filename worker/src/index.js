@@ -1,7 +1,7 @@
 import { authenticate, AuthError } from "./auth.js";
 import { generateImage, MODEL_CONFIG } from "./providers.js";
 import { createCheckoutSession, verifyStripeSignature } from "./stripe.js";
-import { base64ToBytes, constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode, sha256Hex } from "./utils.js";
+import { base64ToBytes, bytesToBase64, constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode, sha256Hex } from "./utils.js";
 
 export default {
   async fetch(request, env, context) {
@@ -411,9 +411,15 @@ async function syncCreditBuckets(env, userId) {
 async function createGeneration(request, env, userId, apiOrigin) {
   const parsed = parseGeneration(await request.json());
   if (parsed.error) return parsed.error;
-  const { input, prompt, aspectRatio, config, inputImage, operationType } = parsed;
+  const { input, prompt, aspectRatio, config, sourceGenerationId, operationType } = parsed;
   const limitError = await checkGenerationLimits(env, userId, config.provider);
   if (limitError) return limitError;
+  let { inputImage } = parsed;
+  if (sourceGenerationId) {
+    const source = await loadGeneratedSource(env, userId, sourceGenerationId);
+    if (source.error) return source.error;
+    inputImage = source.image;
+  }
   await syncCreditBuckets(env, userId);
   const generationId = crypto.randomUUID();
   const account = await env.DB.prepare(
@@ -425,8 +431,8 @@ async function createGeneration(request, env, userId, apiOrigin) {
   const promoCreditsUsed = chargeKind === "credits" ? Math.min(config.credits, Number(account.promo_credit_balance || 0)) : 0;
   const paidCreditsUsed = chargeKind === "credits" ? config.credits - promoCreditsUsed : 0;
   const reserved = chargeKind === "signup_free"
-    ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType })
-    : await reserveCreditGeneration(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType, promoCreditsUsed, paidCreditsUsed });
+    ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, sourceGenerationId, operationType })
+    : await reserveCreditGeneration(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, sourceGenerationId, operationType, promoCreditsUsed, paidCreditsUsed });
 
   if (!reserved) {
     const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
@@ -587,7 +593,12 @@ function parseGeneration(input) {
   const parsedImage = parseInputImage(input.inputImage);
   if (parsedImage?.error) return { error: parsedImage.error };
   const inputImage = parsedImage?.image || null;
-  return { input, prompt, aspectRatio, config, inputImage, operationType: inputImage ? "edit" : "generation" };
+  const sourceGenerationId = typeof input.sourceGenerationId === "string" ? input.sourceGenerationId.trim() : "";
+  if (inputImage && sourceGenerationId) return { error: json({ error: "Choose either an uploaded image or an existing Indermit image." }, 400) };
+  if (sourceGenerationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceGenerationId)) {
+    return { error: json({ error: "The selected Indermit image is invalid." }, 400) };
+  }
+  return { input, prompt, aspectRatio, config, inputImage, sourceGenerationId: sourceGenerationId || null, operationType: inputImage || sourceGenerationId ? "edit" : "generation" };
 }
 
 function parseInputImage(value) {
@@ -617,22 +628,38 @@ function matchesImageSignature(bytes, mimeType) {
   return false;
 }
 
+async function loadGeneratedSource(env, userId, sourceGenerationId) {
+  const row = await env.DB.prepare(
+    `SELECT object_key, mime_type FROM generations
+     WHERE id = ? AND user_id = ? AND status = 'completed'`,
+  ).bind(sourceGenerationId, userId).first();
+  if (!row?.object_key) return { error: json({ error: "That image is no longer available to edit." }, 404) };
+  const object = await env.IMAGES.get(row.object_key);
+  if (!object) return { error: json({ error: "That image is no longer available to edit." }, 404) };
+  const mimeType = row.mime_type || object.httpMetadata?.contentType || "image/png";
+  const extensions = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+  if (!extensions[mimeType]) return { error: json({ error: "That image format cannot be edited." }, 400) };
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if (!bytes.length || !matchesImageSignature(bytes, mimeType)) return { error: json({ error: "The selected image could not be read." }, 400) };
+  return { image: { bytes, base64: bytesToBase64(bytes), byteLength: bytes.length, mimeType, extension: extensions[mimeType] } };
+}
+
 async function reserveFreeGeneration(env, details) {
-  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType } = details;
+  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, sourceGenerationId, operationType } = details;
   const results = await env.DB.batch([
     env.DB.prepare(
       "UPDATE users SET free_generations_remaining = free_generations_remaining - 1 WHERE user_id = ? AND free_generations_remaining > 0",
     ).bind(userId),
     env.DB.prepare(
-      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type, input_image_count, input_image_bytes, status)
-       SELECT ?, ?, ?, ?, ?, ?, 0, 'signup_free', ?, ?, ?, 'processing' WHERE changes() = 1`,
-    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, operationType, inputImage ? 1 : 0, inputImage?.byteLength || 0),
+      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type, input_image_count, input_image_bytes, source_generation_id, status)
+       SELECT ?, ?, ?, ?, ?, ?, 0, 'signup_free', ?, ?, ?, ?, 'processing' WHERE changes() = 1`,
+    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, operationType, inputImage ? 1 : 0, inputImage?.byteLength || 0, sourceGenerationId),
   ]);
   return Boolean(results[1]?.meta?.changes);
 }
 
 async function reserveCreditGeneration(env, details) {
-  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType, promoCreditsUsed, paidCreditsUsed } = details;
+  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, sourceGenerationId, operationType, promoCreditsUsed, paidCreditsUsed } = details;
   const results = await env.DB.batch([
     env.DB.prepare(
       `UPDATE users SET credit_balance = credit_balance - ?, promo_credit_balance = promo_credit_balance - ?, paid_credit_balance = paid_credit_balance - ?
@@ -640,10 +667,10 @@ async function reserveCreditGeneration(env, details) {
     ).bind(config.credits, promoCreditsUsed, paidCreditsUsed, userId, config.credits, promoCreditsUsed, paidCreditsUsed),
     env.DB.prepare(
       `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type,
-        input_image_count, input_image_bytes, paid_credits_used, promo_credits_used, status)
-       SELECT ?, ?, ?, ?, ?, ?, ?, 'credits', ?, ?, ?, ?, ?, 'processing' WHERE changes() = 1`,
+        input_image_count, input_image_bytes, source_generation_id, paid_credits_used, promo_credits_used, status)
+       SELECT ?, ?, ?, ?, ?, ?, ?, 'credits', ?, ?, ?, ?, ?, ?, 'processing' WHERE changes() = 1`,
     ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, config.credits, operationType,
-      inputImage ? 1 : 0, inputImage?.byteLength || 0, paidCreditsUsed, promoCreditsUsed),
+      inputImage ? 1 : 0, inputImage?.byteLength || 0, sourceGenerationId, paidCreditsUsed, promoCreditsUsed),
     env.DB.prepare(
       `INSERT INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
        SELECT ?, ?, ?, 'generation', ?, ? WHERE EXISTS (SELECT 1 FROM generations WHERE id = ?)`,
