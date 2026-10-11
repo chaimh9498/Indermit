@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react";
-import { ArrowRight, ChevronDown, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, RefreshCw, Send, Sparkles, Users } from "lucide-react";
+import { ArrowRight, ChevronDown, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Send, Sparkles, Users, X } from "lucide-react";
 import { apiRequest } from "./api";
 
 const MODELS = [
@@ -94,6 +94,7 @@ function Studio({ getToken, beta }) {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("auto");
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [sourceImage, setSourceImage] = useState(null);
   const [busy, setBusy] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(null);
   const [latestGeneration, setLatestGeneration] = useState(null);
@@ -117,17 +118,45 @@ function Studio({ getToken, beta }) {
     event.preventDefault();
     if (!prompt.trim()) return setMessage("Describe the image you want to create.");
     const submittedPrompt = prompt.trim();
-    setBusy(true); setMessage(""); setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, status: "creating" });
+    const operationType = sourceImage ? "edit" : "generation";
+    setBusy(true); setMessage(""); setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, operationType, status: "creating" });
     try {
-      const result = await apiRequest("/v1/generations", getToken, { method: "POST", body: JSON.stringify({ prompt: submittedPrompt, model, aspectRatio }) });
+      const result = await apiRequest("/v1/generations", getToken, {
+        method: "POST",
+        body: JSON.stringify({
+          prompt: submittedPrompt,
+          model,
+          aspectRatio,
+          inputImage: sourceImage ? { mimeType: sourceImage.mimeType, data: sourceImage.base64 } : undefined,
+        }),
+      });
       setAccount((current) => ({ ...current, creditBalance: result.creditBalance }));
       setImages((current) => [result.generation, ...current]);
       setLatestGeneration(result.generation);
-      setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, status: "loading", imageUrl: result.generation.imageUrl });
+      setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, operationType, status: "loading", imageUrl: result.generation.imageUrl });
       setPrompt("");
+      setSourceImage(null);
     } catch (error) {
       setGenerationProgress(null); setMessage(error.message);
     } finally { setBusy(false); }
+  }
+
+  function chooseSourceImage(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return setMessage("Upload a PNG, JPEG, or WebP image.");
+    if (file.size > 5 * 1024 * 1024) return setMessage("Uploaded images must be 5 MB or smaller.");
+    const reader = new FileReader();
+    reader.onerror = () => setMessage("The image could not be read.");
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      const base64 = dataUrl.split(",")[1] || "";
+      if (!base64) return setMessage("The image could not be read.");
+      setMessage("");
+      setSourceImage({ name: file.name, mimeType: file.type, base64, previewUrl: dataUrl, size: file.size });
+    };
+    reader.readAsDataURL(file);
   }
 
   async function checkout(bundleId) {
@@ -159,26 +188,29 @@ function Studio({ getToken, beta }) {
   </nav><div className="account-cluster"><span><strong>{account.creditBalance}</strong> credits</span><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
     {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PUBLIC BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite, Grok Imagine 2.0 Low, and GPT Image 2.5 Sunburst Low are available now.</p></div>
-      <form className="live-composer" onSubmit={generate}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder="Describe the image you want to create…" /><div className="composer-controls">
+      <form className="live-composer" onSubmit={generate}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder={sourceImage ? "Describe how you want to edit this image…" : "Describe the image you want to create…"} />
+        {sourceImage && <div className="source-image-preview"><img src={sourceImage.previewUrl} alt="Upload preview" /><div><strong>Editing this image</strong><span>{sourceImage.name} · {(sourceImage.size / 1024 / 1024).toFixed(2)} MB</span></div><button type="button" onClick={() => setSourceImage(null)} aria-label="Remove uploaded image"><X size={15} /></button></div>}
+        <div className="composer-controls">
+        <label className="upload-control"><Paperclip size={16} /><span>{sourceImage ? "Change" : "Upload"}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseSourceImage} /></label>
         <label className="live-select"><span><small>Model</small><strong>{activeModel.provider} · {activeModel.name}</strong></span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.provider} · {item.name}{!item.enabled ? " — Coming soon" : ` — ${item.credits} credits`}</option>)}</select><ChevronDown size={15} /></label>
         <label className="ratio-select"><span>Ratio</span><select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}><option>1:1</option><option>16:9</option><option>9:16</option></select></label>
-        <button className="generate-live" disabled={busy || !prompt.trim()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={17} />} Generate · {activeModel.credits} credits</button>
+        <button className="generate-live" disabled={busy || !prompt.trim()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={17} />} {sourceImage ? "Edit" : "Generate"} · {activeModel.credits} credits</button>
       </div></form>
       {latestGeneration && <article className="inline-result" key={latestGeneration.id}>
         <div className="inline-result-image"><img src={latestGeneration.imageUrl} alt={latestGeneration.prompt} /></div>
-        <div className="inline-result-details"><span>CREATED WITH {latestGeneration.provider.toUpperCase()}</span><h2>Your image is ready</h2><p>{latestGeneration.prompt}</p><div><a href={latestGeneration.downloadUrl}>Download image</a><button onClick={() => setLatestGeneration(null)}>Create another</button></div></div>
+        <div className="inline-result-details"><span>{latestGeneration.operationType === "edit" ? "EDITED" : "CREATED"} WITH {latestGeneration.provider.toUpperCase()}</span><h2>Your image is ready</h2><p>{latestGeneration.prompt}</p><div><a href={latestGeneration.downloadUrl}>Download image</a><button onClick={() => setLatestGeneration(null)}>Create another</button></div></div>
       </article>}
     </section>}
-    {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations will appear here." />}</section>}
-    {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PUBLIC BETA CHECKOUT</span><h1>Buy Indermit credits</h1></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure Stripe checkout is connected" : "Checkout is being configured"}</strong>{!beta.stripeReady && <p>Purchasing stays disabled until the live Stripe key and webhook are both available.</p>}</div></div><div className="bundle-grid beta-bundle-grid">{BUNDLES.map((bundle) => <article className="beta-package" key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits · one-time purchase</p><div className="bundle-model-list"><b>Included models</b>{MODELS.filter((item) => item.id !== "auto").map((item) => <div key={item.id}><span><strong>{item.name}</strong><small>{item.provider} · 1K low quality</small></span><em>{item.credits} {item.credits === 1 ? "credit" : "credits"} / image</em></div>)}</div><div className="package-usage-limit"><b>Public-beta usage limits</b><span>Up to 20 completed images per hour and 60 completed images per day, per account.</span></div><button disabled={!beta.stripeReady || busy || account.creditBalance > 0 || beta.purchaseEligible === false} onClick={() => checkout(bundle.id)}>Buy 100 credits</button></article>)}</div><p className="beta-package-note">One package at a time: use your current credits before purchasing another. Accounts remain open after all 25 purchasing places are claimed.</p></section>}
+    {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.operationType === "edit" ? "Edit" : "Generation"} · {item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations and edits will appear here." />}</section>}
+    {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PUBLIC BETA CHECKOUT</span><h1>Buy Indermit credits</h1></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure Stripe checkout is connected" : "Checkout is being configured"}</strong>{!beta.stripeReady && <p>Purchasing stays disabled until the live Stripe key and webhook are both available.</p>}</div></div><div className="bundle-grid beta-bundle-grid">{BUNDLES.map((bundle) => <article className="beta-package" key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits · one-time purchase</p><div className="bundle-model-list"><b>Generate or edit with</b>{MODELS.filter((item) => item.id !== "auto").map((item) => <div key={item.id}><span><strong>{item.name}</strong><small>{item.provider} · 1K low quality</small></span><em>{item.credits} {item.credits === 1 ? "credit" : "credits"} / image</em></div>)}</div><div className="package-usage-limit"><b>Public-beta usage limits</b><span>Up to 20 completed images per hour and 60 completed images per day, per account.</span></div><button disabled={!beta.stripeReady || busy || account.creditBalance > 0 || beta.purchaseEligible === false} onClick={() => checkout(bundle.id)}>Buy 100 credits</button></article>)}</div><p className="beta-package-note">One package at a time: use your current credits before purchasing another. Accounts remain open after all 25 purchasing places are claimed.</p></section>}
     {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={refreshAdmin} refreshing={adminRefreshing} updatedAt={adminUpdatedAt} />}
   </main>
   <SiteFooter />
   {generationProgress && <div className="generation-overlay" role="dialog" aria-modal="true" aria-label="Creating your image"><div className="generation-progress-card">
     <div className="generation-visual"><div className="generation-glow" /><div className="generation-frame"><Sparkles size={31} /></div><div className="generation-ring"><span /></div></div>
-    <span className="section-label">{generationProgress.status === "creating" ? "GENERATING" : "FINALIZING"}</span>
-    <h2>{generationProgress.status === "creating" ? "Creating your image…" : "Your image is ready…"}</h2>
-    <p>{generationProgress.status === "creating" ? `${generationProgress.model} is turning your prompt into an image.` : "Preparing the finished image in your studio."}</p>
+    <span className="section-label">{generationProgress.status === "creating" ? (generationProgress.operationType === "edit" ? "EDITING" : "GENERATING") : "FINALIZING"}</span>
+    <h2>{generationProgress.status === "creating" ? (generationProgress.operationType === "edit" ? "Editing your image…" : "Creating your image…") : "Your image is ready…"}</h2>
+    <p>{generationProgress.status === "creating" ? `${generationProgress.model} is ${generationProgress.operationType === "edit" ? "applying your changes" : "turning your prompt into an image"}.` : "Preparing the finished image in your studio."}</p>
     <div className="generation-prompt">“{generationProgress.prompt}”</div>
     <div className="generation-fade-bar"><span /></div>
     {generationProgress.imageUrl && <img className="generation-preloader" src={generationProgress.imageUrl} alt="" onLoad={() => setGenerationProgress(null)} onError={() => { setGenerationProgress(null); setMessage("The image was created, but the preview could not load. You can find it in My Images."); }} />}
@@ -192,9 +224,9 @@ function AdminView({ data, members, onAdjust, onRefresh, refreshing, updatedAt }
     <div className="metric-grid"><Metric label="Paid beta users" value={`${data.summary.paidBetaUsers}/25`} icon={<Users />} /><Metric label="Generations" value={data.summary.generations} icon={<Sparkles />} /><Metric label="Completed" value={data.summary.completed} tone="good" /><Metric label="Failed" value={data.summary.failed} tone={data.summary.failed ? "bad" : "good"} /></div>
     <UsageDashboard data={data.usage} />
     <div className="admin-columns"><section className="admin-card"><h2>Model and payment status</h2>{data.models.map((model) => <div className="status-row" key={model.id}><div><strong>{model.provider} · {model.name}</strong><span>{model.credits} credits per image</span></div><em className={model.enabled ? "online" : "offline"}>{model.enabled ? "Available" : "Coming soon"}</em></div>)}<div className="status-row"><div><strong>Stripe</strong><span>Webhook: {data.stripe.webhookReady ? "ready" : "not configured"}</span></div><em className={data.stripe.mode === "test" ? "online" : "offline"}>{data.stripe.mode}</em></div></section>
-      <section className="admin-card"><h2>Usage definitions</h2><div className="usage-definitions"><p><strong>Attempts</strong> Every generation sent after Indermit safety limits approve it.</p><p><strong>Completed</strong> Images successfully returned and stored.</p><p><strong>Estimated spend</strong> Completed images multiplied by the configured unit cost.</p><p><strong>Provider balances</strong> Must be reconciled with provider billing because standard API keys do not expose every account balance.</p></div></section></div>
+      <section className="admin-card"><h2>Financial definitions</h2><div className="usage-definitions"><p><strong>Provider cost</strong> Actual returned token usage when available; fixed published pricing or a labeled estimate otherwise.</p><p><strong>Net revenue</strong> Paid credits used, valued after allocated Stripe and Radar fees. Promotional credits count as $0 revenue.</p><p><strong>Gross profit</strong> Net revenue minus provider cost. It excludes tax, chargebacks, owner labor, and costs outside the API request.</p><p><strong>Provider balances</strong> Must still be reconciled with provider billing because standard API keys do not expose every account balance.</p></div></section></div>
     <section className="admin-card"><h2>Beta members</h2>{members.map((member) => <div className="member-row" key={member.user_id}><div><strong>{member.user_id}</strong><span>{member.role} · {member.credit_balance} credits</span></div><div><button onClick={() => onAdjust(member.user_id, 10)}>+10</button><button onClick={() => onAdjust(member.user_id, 100)}>+100</button></div></div>)}</section>
-    <section className="admin-card table-card"><h2>Recent generation activity</h2><div className="activity-table"><div className="activity-head"><span>User</span><span>Model</span><span>Status</span><span>Credits</span><span>Time</span></div>{data.recentGenerations.map((item) => <div className="activity-row" key={item.id}><span>{item.user_id}</span><span>{item.provider} · {item.model}</span><span className={`activity-status ${item.status}`}>{item.status}{item.error_code ? ` · ${item.error_code}` : ""}</span><span>{item.credit_cost}</span><span>{formatDate(item.created_at)}</span></div>)}</div></section>
+    <section className="admin-card table-card"><h2>Recent image activity</h2><div className="activity-table"><div className="activity-head"><span>User</span><span>Model / action</span><span>Status</span><span>Cost / profit</span><span>Time</span></div>{data.recentGenerations.map((item) => <div className="activity-row" key={item.id}><span>{item.user_id}</span><span>{item.provider} · {item.model}<br />{item.operation_type === "edit" ? "Edit" : "Generation"}</span><span className={`activity-status ${item.status}`}>{item.status}{item.error_code ? ` · ${item.error_code}` : ""}</span><span>{formatMoney(item.provider_cost_usd)} / {formatMoney(item.gross_profit_usd)}<br /><small>{formatCostSource(item.cost_source)}</small></span><span>{formatDate(item.created_at)}</span></div>)}</div></section>
   </section>;
 }
 
@@ -203,19 +235,20 @@ function UsageDashboard({ data }) {
   return <>
     <section className="admin-card usage-dashboard">
       <div className="usage-heading"><div><span>ALL PROVIDERS · {data.timezone}</span><h2>Unified API usage</h2></div><small>{data.note}</small></div>
-      <div className="usage-spend-grid"><UsageSpend label="Today" value={data.estimatedSpend.today} /><UsageSpend label="Last 7 days" value={data.estimatedSpend.sevenDays} /><UsageSpend label="Last 30 days" value={data.estimatedSpend.thirtyDays} /><UsageSpend label="All time" value={data.estimatedSpend.allTime} /></div>
+      <div className="usage-spend-grid"><UsageSpend label="Today provider cost" value={data.financials.today.providerCostUsd} /><UsageSpend label="Today net revenue" value={data.financials.today.netRevenueUsd} /><UsageSpend label="Today gross profit" value={data.financials.today.grossProfitUsd} /><UsageSpend label="All-time gross profit" value={data.financials.allTime.grossProfitUsd} /></div>
       <div className="provider-usage-grid">{data.providers.map((item) => {
         const percentage = Math.min(100, item.dailyLimit ? (item.today.attempts / item.dailyLimit) * 100 : 0);
-        return <article className="provider-usage-card" key={item.provider}><div><strong>{item.provider}</strong><em>{formatMoney(item.unitCostUsd)} / completed image</em></div><b>{item.today.attempts}<small> / {item.dailyLimit} today</small></b><div className="usage-progress"><span style={{ width: `${percentage}%` }} /></div><p>{item.today.completed} completed · {item.today.failed} failed · {formatMoney(item.today.estimatedSpendUsd)} estimated</p><dl><div><dt>7 days</dt><dd>{item.sevenDays.attempts} attempts · {formatMoney(item.sevenDays.estimatedSpendUsd)}</dd></div><div><dt>All time</dt><dd>{item.allTime.attempts} attempts · {formatMoney(item.allTime.estimatedSpendUsd)}</dd></div></dl></article>;
+        return <article className="provider-usage-card" key={item.provider}><div><strong>{item.provider}</strong><em>{formatMoney(item.allTime.grossProfitUsd)} profit</em></div><b>{item.today.attempts}<small> / {item.dailyLimit} today</small></b><div className="usage-progress"><span style={{ width: `${percentage}%` }} /></div><p>{item.today.completed} completed · {item.today.failed} failed · {formatMoney(item.today.providerCostUsd)} cost</p><dl><div><dt>7 days</dt><dd>{item.sevenDays.attempts} attempts · {formatMoney(item.sevenDays.grossProfitUsd)} profit</dd></div><div><dt>All time</dt><dd>{item.allTime.attempts} attempts · {formatMoney(item.allTime.providerCostUsd)} cost</dd></div></dl></article>;
       })}</div>
     </section>
-    <section className="admin-card table-card usage-model-card"><h2>Usage by model</h2><div className="usage-model-table"><div className="usage-model-head"><span>Provider / model</span><span>Today</span><span>7 days</span><span>30 days</span><span>All time</span><span>Credits used</span></div>{data.models.length ? data.models.map((item) => <div className="usage-model-row" key={`${item.provider}-${item.model}`}><span><strong>{item.provider}</strong><small>{item.modelName}</small></span><span>{usageCell(item.today)}</span><span>{usageCell(item.sevenDays)}</span><span>{usageCell(item.thirtyDays)}</span><span>{usageCell(item.allTime)}</span><span>{item.allTime.creditsCharged}</span></div>) : <p className="usage-empty">No API generations have been recorded yet.</p>}</div></section>
+    <section className="admin-card table-card usage-model-card"><h2>Generation versus editing profitability</h2><div className="usage-model-table"><div className="usage-model-head"><span>Provider / model / action</span><span>Today</span><span>7 days</span><span>30 days</span><span>All time</span><span>Credits used</span></div>{data.models.length ? data.models.map((item) => <div className="usage-model-row" key={`${item.provider}-${item.model}-${item.operationType}`}><span><strong>{item.provider}</strong><small>{item.modelName} · {item.operationType === "edit" ? "Editing" : "Generation"}</small></span><span>{usageCell(item.today)}</span><span>{usageCell(item.sevenDays)}</span><span>{usageCell(item.thirtyDays)}</span><span>{usageCell(item.allTime)}</span><span>{item.allTime.creditsCharged}</span></div>) : <p className="usage-empty">No API image activity has been recorded yet.</p>}</div></section>
   </>;
 }
 
 function UsageSpend({ label, value }) { return <article><span>{label}</span><strong>{formatMoney(value)}</strong></article>; }
-function usageCell(period) { return <><b>{period.attempts}</b><small>{period.completed} ok · {period.failed} failed<br />{formatMoney(period.estimatedSpendUsd)}</small></>; }
+function usageCell(period) { return <><b>{period.attempts}</b><small>{period.completed} ok · {period.failed} failed<br />Cost {formatMoney(period.providerCostUsd)} · Profit {formatMoney(period.grossProfitUsd)}</small></>; }
 function formatMoney(value) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(value || 0)); }
+function formatCostSource(value) { return value === "provider_usage" ? "Provider-reported" : value === "provider_fixed" ? "Published fixed price" : value === "estimated" ? "Estimated" : "Not recorded"; }
 
 function Metric({ label, value, icon, tone = "" }) { return <article className={`metric ${tone}`}>{icon}<span>{label}</span><strong>{value}</strong></article>; }
 function EmptyState({ icon, title, text }) { return <div className="empty-state">{icon}<h2>{title}</h2><p>{text}</p></div>; }

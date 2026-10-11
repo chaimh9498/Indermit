@@ -1,7 +1,7 @@
 import { authenticate, AuthError } from "./auth.js";
 import { generateImage, MODEL_CONFIG } from "./providers.js";
 import { createCheckoutSession, verifyStripeSignature } from "./stripe.js";
-import { constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode, sha256Hex } from "./utils.js";
+import { base64ToBytes, constantTimeEqual, corsHeaders, hmacHex, json, safeErrorCode, sha256Hex } from "./utils.js";
 
 export default {
   async fetch(request, env, context) {
@@ -85,6 +85,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   }
 
   if (request.method === "GET" && url.pathname === "/v1/account") {
+    await syncCreditBuckets(env, userId);
     const user = await env.DB.prepare(
       "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
     ).bind(userId).first();
@@ -96,6 +97,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   }
 
   if (request.method === "POST" && url.pathname === "/v1/billing/checkout") {
+    await syncCreditBuckets(env, userId);
     const input = await request.json();
     const account = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
     try {
@@ -108,7 +110,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
 
   if (request.method === "GET" && url.pathname === "/v1/generations") {
     const { results } = await env.DB.prepare(
-      `SELECT id, provider, model, prompt, aspect_ratio, credit_cost, created_at
+      `SELECT id, provider, model, prompt, aspect_ratio, credit_cost, operation_type, created_at
        FROM generations WHERE user_id = ? AND status = 'completed'
        ORDER BY created_at DESC LIMIT 60`,
     ).bind(userId).all();
@@ -243,42 +245,50 @@ async function handleAdmin(request, env, _userId, url) {
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'completed'").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM generations WHERE status = 'failed'").first(),
       env.DB.prepare(
-        `SELECT id, user_id, provider, model, status, credit_cost, error_code, created_at, completed_at
+      `SELECT id, user_id, provider, model, operation_type, status, credit_cost, provider_cost_usd,
+              net_revenue_usd, gross_profit_usd, cost_source, error_code, created_at, completed_at
          FROM generations ORDER BY created_at DESC LIMIT 40`,
       ).all(),
       env.DB.prepare(
-        `SELECT provider, model,
+        `SELECT provider, model, operation_type,
                 COUNT(*) AS attempts,
                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
                 SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
                 SUM(CASE WHEN status = 'completed' THEN credit_cost ELSE 0 END) AS credits_charged,
+                SUM(CASE WHEN status = 'completed' THEN provider_cost_usd ELSE 0 END) AS provider_cost_usd,
+                SUM(CASE WHEN status = 'completed' THEN net_revenue_usd ELSE 0 END) AS net_revenue_usd,
+                SUM(CASE WHEN status = 'completed' THEN gross_profit_usd ELSE 0 END) AS gross_profit_usd,
                 SUM(CASE WHEN created_at >= datetime('now', 'start of day') THEN 1 ELSE 0 END) AS today_attempts,
                 SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN 1 ELSE 0 END) AS today_completed,
                 SUM(CASE WHEN status = 'failed' AND created_at >= datetime('now', 'start of day') THEN 1 ELSE 0 END) AS today_failed,
                 SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN credit_cost ELSE 0 END) AS today_credits_charged,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN provider_cost_usd ELSE 0 END) AS today_provider_cost_usd,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN net_revenue_usd ELSE 0 END) AS today_net_revenue_usd,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', 'start of day') THEN gross_profit_usd ELSE 0 END) AS today_gross_profit_usd,
                 SUM(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS seven_day_attempts,
                 SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS seven_day_completed,
                 SUM(CASE WHEN status = 'failed' AND created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS seven_day_failed,
                 SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN credit_cost ELSE 0 END) AS seven_day_credits_charged,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN provider_cost_usd ELSE 0 END) AS seven_day_provider_cost_usd,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN net_revenue_usd ELSE 0 END) AS seven_day_net_revenue_usd,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-7 days') THEN gross_profit_usd ELSE 0 END) AS seven_day_gross_profit_usd,
                 SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS thirty_day_attempts,
                 SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS thirty_day_completed,
                 SUM(CASE WHEN status = 'failed' AND created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) AS thirty_day_failed,
-                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN credit_cost ELSE 0 END) AS thirty_day_credits_charged
-         FROM generations GROUP BY provider, model ORDER BY provider, model`,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN credit_cost ELSE 0 END) AS thirty_day_credits_charged,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN provider_cost_usd ELSE 0 END) AS thirty_day_provider_cost_usd,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN net_revenue_usd ELSE 0 END) AS thirty_day_net_revenue_usd,
+                SUM(CASE WHEN status = 'completed' AND created_at >= datetime('now', '-30 days') THEN gross_profit_usd ELSE 0 END) AS thirty_day_gross_profit_usd
+         FROM generations GROUP BY provider, model, operation_type ORDER BY provider, model, operation_type`,
       ).all(),
     ]);
-    const providerCosts = {
-      OpenAI: nonNegativeNumber(env.OPENAI_ESTIMATED_IMAGE_COST_USD, 0.007),
-      Google: nonNegativeNumber(env.GOOGLE_ESTIMATED_IMAGE_COST_USD, 0.0336),
-      xAI: nonNegativeNumber(env.XAI_ESTIMATED_IMAGE_COST_USD, 0.04),
-    };
     const providerLimits = {
       OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 1500),
       Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 1500),
       xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 1500),
     };
-    const usageDashboard = buildUsageDashboard(providerUsage.results, providerCosts, providerLimits);
+    const usageDashboard = buildUsageDashboard(providerUsage.results, providerLimits);
     return json({
       summary: {
         betaMembers: users?.count || 0,
@@ -321,11 +331,18 @@ async function handleAdmin(request, env, _userId, url) {
     if (typeof userId !== "string" || !Number.isInteger(parsedAmount) || parsedAmount < -10000 || parsedAmount > 10000 || parsedAmount === 0) {
       return json({ error: "Choose a member and enter a whole-number adjustment." }, 400);
     }
+    await syncCreditBuckets(env, userId);
+    const balances = await env.DB.prepare(
+      "SELECT paid_credit_balance, promo_credit_balance FROM users WHERE user_id = ?",
+    ).bind(userId).first();
+    const promoDeduction = parsedAmount < 0 ? Math.min(-parsedAmount, Number(balances?.promo_credit_balance || 0)) : 0;
+    const paidDeduction = parsedAmount < 0 ? -parsedAmount - promoDeduction : 0;
     const result = await env.DB.prepare(
-      `UPDATE users SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = ? AND credit_balance + ? >= 0
+      `UPDATE users SET credit_balance = credit_balance + ?,
+       promo_credit_balance = promo_credit_balance + ? - ?, paid_credit_balance = paid_credit_balance - ?, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND credit_balance + ? >= 0 AND paid_credit_balance >= ?
        AND EXISTS (SELECT 1 FROM beta_members WHERE beta_members.user_id = users.user_id)`,
-    ).bind(parsedAmount, userId, parsedAmount).run();
+    ).bind(parsedAmount, Math.max(0, parsedAmount), promoDeduction, paidDeduction, userId, parsedAmount, paidDeduction).run();
     if (!result.meta.changes) return json({ error: "Member not found or the adjustment would make the balance negative." }, 400);
     await env.DB.prepare(
       `INSERT INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
@@ -357,11 +374,11 @@ async function ensureUser(env, userId) {
        SELECT ?, ? WHERE (SELECT COUNT(*) FROM signup_credit_grants) < ?`,
     ).bind(userId, credits, maximum),
     env.DB.prepare(
-      `UPDATE users SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
+      `UPDATE users SET credit_balance = credit_balance + ?, promo_credit_balance = promo_credit_balance + ?, updated_at = CURRENT_TIMESTAMP
        WHERE user_id = ?
        AND EXISTS (SELECT 1 FROM signup_credit_grants WHERE user_id = ?)
        AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE reference_id = ?)`,
-    ).bind(credits, userId, userId, referenceId),
+    ).bind(credits, credits, userId, userId, referenceId),
     env.DB.prepare(
       `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
        SELECT ?, ?, ?, 'adjustment', ?, 'Launch signup bonus' WHERE changes() = 1`,
@@ -369,22 +386,47 @@ async function ensureUser(env, userId) {
   ]);
 }
 
+async function syncCreditBuckets(env, userId) {
+  const account = await env.DB.prepare(
+    "SELECT credit_balance, paid_credit_balance, promo_credit_balance FROM users WHERE user_id = ?",
+  ).bind(userId).first();
+  if (!account || Number(account.paid_credit_balance || 0) + Number(account.promo_credit_balance || 0) === Number(account.credit_balance || 0)) return;
+  const totals = await env.DB.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN kind = 'purchase' AND amount > 0 THEN amount ELSE 0 END), 0) AS purchased,
+       COALESCE(SUM(CASE WHEN kind = 'adjustment' THEN amount ELSE 0 END), 0) AS promotional,
+       COALESCE(-SUM(CASE WHEN kind IN ('generation', 'refund') THEN amount ELSE 0 END), 0) AS net_spent
+     FROM credit_ledger WHERE user_id = ?`,
+  ).bind(userId).first();
+  const balance = Number(account.credit_balance || 0);
+  const promotionalGranted = Math.max(0, Number(totals?.promotional || 0));
+  const netSpent = Math.max(0, Number(totals?.net_spent || 0));
+  const promoRemaining = Math.min(balance, Math.max(0, promotionalGranted - netSpent));
+  const paidRemaining = Math.max(0, balance - promoRemaining);
+  await env.DB.prepare(
+    "UPDATE users SET paid_credit_balance = ?, promo_credit_balance = ? WHERE user_id = ?",
+  ).bind(paidRemaining, promoRemaining, userId).run();
+}
+
 async function createGeneration(request, env, userId, apiOrigin) {
   const parsed = parseGeneration(await request.json());
   if (parsed.error) return parsed.error;
-  const { input, prompt, aspectRatio, config } = parsed;
+  const { input, prompt, aspectRatio, config, inputImage, operationType } = parsed;
   const limitError = await checkGenerationLimits(env, userId, config.provider);
   if (limitError) return limitError;
+  await syncCreditBuckets(env, userId);
   const generationId = crypto.randomUUID();
   const account = await env.DB.prepare(
-    "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
+    "SELECT credit_balance, paid_credit_balance, promo_credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
   ).bind(userId).first();
   const freeGenerationsEnabled = env.FREE_GENERATIONS_ENABLED === "true";
   const chargeKind = freeGenerationsEnabled && account.free_generations_remaining > 0 ? "signup_free" : "credits";
   const creditCost = chargeKind === "signup_free" ? 0 : config.credits;
+  const promoCreditsUsed = chargeKind === "credits" ? Math.min(config.credits, Number(account.promo_credit_balance || 0)) : 0;
+  const paidCreditsUsed = chargeKind === "credits" ? config.credits - promoCreditsUsed : 0;
   const reserved = chargeKind === "signup_free"
-    ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio })
-    : await reserveCreditGeneration(env, { generationId, userId, config, input, prompt, aspectRatio });
+    ? await reserveFreeGeneration(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType })
+    : await reserveCreditGeneration(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType, promoCreditsUsed, paidCreditsUsed });
 
   if (!reserved) {
     const user = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
@@ -392,7 +434,7 @@ async function createGeneration(request, env, userId, apiOrigin) {
   }
 
   try {
-    await generateAndStore(env, { generationId, userId, config, input, prompt, aspectRatio });
+    await generateAndStore(env, { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType, paidCreditsUsed });
   } catch (error) {
     await refundGeneration(env, userId, generationId, creditCost, chargeKind, error);
     const publicMessage = error.message?.includes("not configured")
@@ -402,7 +444,7 @@ async function createGeneration(request, env, userId, apiOrigin) {
   }
 
   const row = await env.DB.prepare(
-    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, created_at FROM generations WHERE id = ?",
+    "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type, created_at FROM generations WHERE id = ?",
   ).bind(generationId).first();
   const user = await env.DB.prepare(
     "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
@@ -462,7 +504,7 @@ function nonNegativeNumber(value, fallback) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function buildUsageDashboard(rows, providerCosts, providerLimits) {
+function buildUsageDashboard(rows, providerLimits) {
   const modelNames = {
     auto: "Auto (Google)",
     "google-nano-banana": "Nano Banana 2 Lite",
@@ -475,9 +517,11 @@ function buildUsageDashboard(rows, providerCosts, providerLimits) {
     completed: number(row[`${prefix}completed`]),
     failed: number(row[`${prefix}failed`]),
     creditsCharged: number(row[`${prefix}credits_charged`]),
+    providerCostUsd: money(row[`${prefix}provider_cost_usd`]),
+    netRevenueUsd: money(row[`${prefix}net_revenue_usd`]),
+    grossProfitUsd: money(row[`${prefix}gross_profit_usd`]),
   });
   const models = rows.map((row) => {
-    const unitCostUsd = providerCosts[row.provider] || 0;
     const allTime = period(row);
     const today = period(row, "today_");
     const sevenDays = period(row, "seven_day_");
@@ -486,12 +530,12 @@ function buildUsageDashboard(rows, providerCosts, providerLimits) {
       provider: row.provider,
       model: row.model,
       modelName: modelNames[row.model] || row.model,
-      unitCostUsd,
+      operationType: row.operation_type || "generation",
       processing: number(row.processing),
-      today: { ...today, estimatedSpendUsd: money(today.completed * unitCostUsd) },
-      sevenDays: { ...sevenDays, estimatedSpendUsd: money(sevenDays.completed * unitCostUsd) },
-      thirtyDays: { ...thirtyDays, estimatedSpendUsd: money(thirtyDays.completed * unitCostUsd) },
-      allTime: { ...allTime, estimatedSpendUsd: money(allTime.completed * unitCostUsd) },
+      today,
+      sevenDays,
+      thirtyDays,
+      allTime,
     };
   });
   const providers = ["Google", "OpenAI", "xAI"].map((provider) => {
@@ -501,12 +545,13 @@ function buildUsageDashboard(rows, providerCosts, providerLimits) {
       completed: sum.completed + item[key].completed,
       failed: sum.failed + item[key].failed,
       creditsCharged: sum.creditsCharged + item[key].creditsCharged,
-      estimatedSpendUsd: money(sum.estimatedSpendUsd + item[key].estimatedSpendUsd),
-    }), { attempts: 0, completed: 0, failed: 0, creditsCharged: 0, estimatedSpendUsd: 0 });
+      providerCostUsd: money(sum.providerCostUsd + item[key].providerCostUsd),
+      netRevenueUsd: money(sum.netRevenueUsd + item[key].netRevenueUsd),
+      grossProfitUsd: money(sum.grossProfitUsd + item[key].grossProfitUsd),
+    }), { attempts: 0, completed: 0, failed: 0, creditsCharged: 0, providerCostUsd: 0, netRevenueUsd: 0, grossProfitUsd: 0 });
     return {
       provider,
       dailyLimit: providerLimits[provider],
-      unitCostUsd: providerCosts[provider],
       processing: providerModels.reduce((sum, item) => sum + item.processing, 0),
       today: totals("today"),
       sevenDays: totals("sevenDays"),
@@ -514,17 +559,16 @@ function buildUsageDashboard(rows, providerCosts, providerLimits) {
       allTime: totals("allTime"),
     };
   });
-  const totalSpend = (key) => money(providers.reduce((sum, item) => sum + item[key].estimatedSpendUsd, 0));
+  const totals = (key) => ({
+    providerCostUsd: money(providers.reduce((sum, item) => sum + item[key].providerCostUsd, 0)),
+    netRevenueUsd: money(providers.reduce((sum, item) => sum + item[key].netRevenueUsd, 0)),
+    grossProfitUsd: money(providers.reduce((sum, item) => sum + item[key].grossProfitUsd, 0)),
+  });
   return {
     currency: "USD",
     timezone: "UTC",
-    note: "Estimated from completed Indermit generations. Provider billing balances may differ.",
-    estimatedSpend: {
-      today: totalSpend("today"),
-      sevenDays: totalSpend("sevenDays"),
-      thirtyDays: totalSpend("thirtyDays"),
-      allTime: totalSpend("allTime"),
-    },
+    note: "Recorded per completed request. Provider usage is used when returned; fixed or clearly labeled estimates are used otherwise.",
+    financials: { today: totals("today"), sevenDays: totals("sevenDays"), thirtyDays: totals("thirtyDays"), allTime: totals("allTime") },
     providers,
     models,
   };
@@ -540,58 +584,106 @@ function parseGeneration(input) {
   const config = MODEL_CONFIG[input.model];
   if (!config) return { error: json({ error: "Choose a supported model." }, 400) };
   if (!prompt || prompt.length > 1200) return { error: json({ error: "Prompt must contain 1–1,200 characters." }, 400) };
-  return { input, prompt, aspectRatio, config };
+  const parsedImage = parseInputImage(input.inputImage);
+  if (parsedImage?.error) return { error: parsedImage.error };
+  const inputImage = parsedImage?.image || null;
+  return { input, prompt, aspectRatio, config, inputImage, operationType: inputImage ? "edit" : "generation" };
+}
+
+function parseInputImage(value) {
+  if (value == null) return null;
+  const allowed = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+  if (!value || typeof value !== "object" || typeof value.data !== "string" || !allowed[value.mimeType]) {
+    return { error: json({ error: "Upload one PNG, JPEG, or WebP image." }, 400) };
+  }
+  const base64 = value.data.replace(/\s/g, "");
+  const maximumBytes = 5 * 1024 * 1024;
+  if (!base64 || base64.length > Math.ceil(maximumBytes / 3) * 4 + 4) {
+    return { error: json({ error: "Uploaded images must be 5 MB or smaller." }, 413) };
+  }
+  let bytes;
+  try { bytes = base64ToBytes(base64); }
+  catch { return { error: json({ error: "The uploaded image could not be read." }, 400) }; }
+  if (!bytes.length || bytes.length > maximumBytes || !matchesImageSignature(bytes, value.mimeType)) {
+    return { error: json({ error: "The uploaded file is not a valid PNG, JPEG, or WebP image." }, 400) };
+  }
+  return { image: { base64, bytes, byteLength: bytes.length, mimeType: value.mimeType, extension: allowed[value.mimeType] } };
+}
+
+function matchesImageSignature(bytes, mimeType) {
+  if (mimeType === "image/png") return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  if (mimeType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimeType === "image/webp") return String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+  return false;
 }
 
 async function reserveFreeGeneration(env, details) {
-  const { generationId, userId, config, input, prompt, aspectRatio } = details;
+  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType } = details;
   const results = await env.DB.batch([
     env.DB.prepare(
       "UPDATE users SET free_generations_remaining = free_generations_remaining - 1 WHERE user_id = ? AND free_generations_remaining > 0",
     ).bind(userId),
     env.DB.prepare(
-      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, status)
-       SELECT ?, ?, ?, ?, ?, ?, 0, 'signup_free', 'processing' WHERE changes() = 1`,
-    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio),
+      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type, input_image_count, input_image_bytes, status)
+       SELECT ?, ?, ?, ?, ?, ?, 0, 'signup_free', ?, ?, ?, 'processing' WHERE changes() = 1`,
+    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, operationType, inputImage ? 1 : 0, inputImage?.byteLength || 0),
   ]);
   return Boolean(results[1]?.meta?.changes);
 }
 
 async function reserveCreditGeneration(env, details) {
-  const { generationId, userId, config, input, prompt, aspectRatio } = details;
+  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType, promoCreditsUsed, paidCreditsUsed } = details;
   const results = await env.DB.batch([
     env.DB.prepare(
-      "UPDATE users SET credit_balance = credit_balance - ? WHERE user_id = ? AND credit_balance >= ?",
-    ).bind(config.credits, userId, config.credits),
+      `UPDATE users SET credit_balance = credit_balance - ?, promo_credit_balance = promo_credit_balance - ?, paid_credit_balance = paid_credit_balance - ?
+       WHERE user_id = ? AND credit_balance >= ? AND promo_credit_balance >= ? AND paid_credit_balance >= ?`,
+    ).bind(config.credits, promoCreditsUsed, paidCreditsUsed, userId, config.credits, promoCreditsUsed, paidCreditsUsed),
     env.DB.prepare(
-      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, status)
-       SELECT ?, ?, ?, ?, ?, ?, ?, 'credits', 'processing' WHERE changes() = 1`,
-    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, config.credits),
+      `INSERT INTO generations (id, user_id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type,
+        input_image_count, input_image_bytes, paid_credits_used, promo_credits_used, status)
+       SELECT ?, ?, ?, ?, ?, ?, ?, 'credits', ?, ?, ?, ?, ?, 'processing' WHERE changes() = 1`,
+    ).bind(generationId, userId, config.provider, input.model, prompt, aspectRatio, config.credits, operationType,
+      inputImage ? 1 : 0, inputImage?.byteLength || 0, paidCreditsUsed, promoCreditsUsed),
     env.DB.prepare(
       `INSERT INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
        SELECT ?, ?, ?, 'generation', ?, ? WHERE EXISTS (SELECT 1 FROM generations WHERE id = ?)`,
-    ).bind(crypto.randomUUID(), userId, -config.credits, `generation:${generationId}`, `${config.provider} image generation`, generationId),
+    ).bind(crypto.randomUUID(), userId, -config.credits, `generation:${generationId}`, `${config.provider} image ${operationType}`, generationId),
   ]);
   return Boolean(results[1]?.meta?.changes);
 }
 
 async function generateAndStore(env, details) {
-  const { generationId, userId, config, input, prompt, aspectRatio } = details;
-  const generated = await generateImage(env, { model: input.model, prompt, aspectRatio });
+  const { generationId, userId, config, input, prompt, aspectRatio, inputImage, operationType, paidCreditsUsed } = details;
+  const generated = await generateImage(env, { model: input.model, prompt, aspectRatio, inputImage });
   const extension = generated.mimeType.includes("webp") ? "webp" : generated.mimeType.includes("jpeg") ? "jpg" : "png";
   const objectKey = `${userId}/${generationId}.${extension}`;
+  const usage = generated.usage || fallbackProviderUsage(config.provider, operationType);
+  const providerCostUsd = money(usage.costUsd);
+  const revenuePerPaidCredit = nonNegativeNumber(env.NET_REVENUE_PER_PAID_CREDIT_USD, 0.04505);
+  const netRevenueUsd = money(paidCreditsUsed * revenuePerPaidCredit);
+  const grossProfitUsd = money(netRevenueUsd - providerCostUsd);
   await env.IMAGES.put(objectKey, generated.bytes, {
     httpMetadata: { contentType: generated.mimeType, cacheControl: "private, max-age=31536000, immutable" },
-    customMetadata: { userId, generationId, provider: config.provider },
+    customMetadata: { userId, generationId, provider: config.provider, operationType },
   });
   const completed = await env.DB.prepare(
-    `UPDATE generations SET status = 'completed', object_key = ?, mime_type = ?, completed_at = CURRENT_TIMESTAMP
+    `UPDATE generations SET status = 'completed', object_key = ?, mime_type = ?, input_text_tokens = ?, input_image_tokens = ?,
+       output_image_tokens = ?, provider_cost_usd = ?, cost_source = ?, net_revenue_usd = ?, gross_profit_usd = ?, completed_at = CURRENT_TIMESTAMP
      WHERE id = ? AND user_id = ? AND status = 'processing'`,
-  ).bind(objectKey, generated.mimeType, generationId, userId).run();
+  ).bind(objectKey, generated.mimeType, usage.inputTextTokens || 0, usage.inputImageTokens || 0,
+    usage.outputImageTokens || 0, providerCostUsd, usage.costSource || "estimated", netRevenueUsd, grossProfitUsd,
+    generationId, userId).run();
   if (!completed.meta.changes) {
     await env.IMAGES.delete(objectKey);
     throw new Error("Generation could not be finalized");
   }
+}
+
+function fallbackProviderUsage(provider, operationType) {
+  const editing = operationType === "edit";
+  if (provider === "xAI") return { inputTextTokens: 0, inputImageTokens: 0, outputImageTokens: 0, costUsd: editing ? 0.05 : 0.04, costSource: "provider_fixed" };
+  if (provider === "OpenAI") return { inputTextTokens: 100, inputImageTokens: editing ? 1229 : 0, outputImageTokens: 196, costUsd: editing ? 0.016212 : 0.00638, costSource: "estimated" };
+  return { inputTextTokens: 100, inputImageTokens: editing ? 1032 : 0, outputImageTokens: 1120, costUsd: editing ? 0.033883 : 0.033625, costSource: "estimated" };
 }
 
 async function refundGeneration(env, userId, generationId, credits, chargeKind, error) {
@@ -602,9 +694,11 @@ async function refundGeneration(env, userId, generationId, credits, chargeKind, 
     ).bind(userId, generationId)]
     : [
       env.DB.prepare(
-        `UPDATE users SET credit_balance = credit_balance + ?
+        `UPDATE users SET credit_balance = credit_balance + ?,
+         paid_credit_balance = paid_credit_balance + COALESCE((SELECT paid_credits_used FROM generations WHERE id = ?), 0),
+         promo_credit_balance = promo_credit_balance + COALESCE((SELECT promo_credits_used FROM generations WHERE id = ?), 0)
          WHERE user_id = ? AND EXISTS (SELECT 1 FROM generations WHERE id = ? AND status = 'processing')`,
-      ).bind(credits, userId, generationId),
+      ).bind(credits, generationId, generationId, userId, generationId),
       env.DB.prepare(
         `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
          SELECT ?, ?, ?, 'refund', ?, 'Automatic refund for failed generation' WHERE changes() = 1`,
@@ -626,6 +720,7 @@ async function serializeGeneration(row, env, apiOrigin) {
     prompt: row.prompt,
     aspectRatio: row.aspect_ratio,
     creditCost: row.credit_cost,
+    operationType: row.operation_type || "generation",
     createdAt: row.created_at,
     imageUrl: `${apiOrigin}/v1/images/${row.id}?token=${token}`,
     downloadUrl: `${apiOrigin}/v1/images/${row.id}?token=${token}&download=1`,
@@ -679,9 +774,10 @@ async function handleStripeWebhook(request, env) {
     env.DB.prepare("INSERT OR IGNORE INTO users (user_id, stripe_customer_id) VALUES (?, ?)").bind(userId, session.customer || null),
     env.DB.prepare("INSERT OR IGNORE INTO stripe_events (event_id, event_type) VALUES (?, ?)").bind(event.id, event.type),
     env.DB.prepare(
-      `UPDATE users SET credit_balance = credit_balance + ?, stripe_customer_id = COALESCE(?, stripe_customer_id), updated_at = CURRENT_TIMESTAMP
+      `UPDATE users SET credit_balance = credit_balance + ?, paid_credit_balance = paid_credit_balance + ?,
+       stripe_customer_id = COALESCE(?, stripe_customer_id), updated_at = CURRENT_TIMESTAMP
        WHERE user_id = ? AND changes() = 1`,
-    ).bind(credits, session.customer || null, userId),
+    ).bind(credits, credits, session.customer || null, userId),
     env.DB.prepare(
       `INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, kind, reference_id, description)
        SELECT ?, ?, ?, 'purchase', ?, 'Stripe credit purchase' WHERE changes() = 1`,
