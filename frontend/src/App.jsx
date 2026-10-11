@@ -167,7 +167,7 @@ function Studio({ getToken, beta }) {
     setModel(MODELS.some((candidate) => candidate.id === item.model && candidate.enabled) ? item.model : "auto");
     setAspectRatio(["1:1", "16:9", "9:16"].includes(item.aspectRatio) ? item.aspectRatio : "1:1");
     setSourceImage({ generationId: item.id, previewUrl: item.imageUrl, name: "Indermit image" });
-    setMessage("Describe what you want to change, then select Edit.");
+    setMessage("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
