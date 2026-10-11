@@ -274,9 +274,9 @@ async function handleAdmin(request, env, _userId, url) {
       xAI: nonNegativeNumber(env.XAI_ESTIMATED_IMAGE_COST_USD, 0.04),
     };
     const providerLimits = {
-      OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 750),
-      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 750),
-      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 750),
+      OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 1500),
+      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 1500),
+      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 1500),
     };
     const usageDashboard = buildUsageDashboard(providerUsage.results, providerCosts, providerLimits);
     return json({
@@ -435,17 +435,17 @@ async function checkGenerationLimits(env, userId, provider) {
   if ((globalProcessing?.count || 0) >= positiveInteger(env.MAX_GLOBAL_CONCURRENT_GENERATIONS, 3)) {
     return json({ error: "The beta is busy right now. Please try again in a moment." }, 429);
   }
-  if ((hourly?.count || 0) >= positiveInteger(env.MAX_GENERATIONS_PER_HOUR, 10)) {
+  if ((hourly?.count || 0) >= positiveInteger(env.MAX_GENERATIONS_PER_HOUR, 20)) {
     return json({ error: "You reached the public-beta hourly limit. Try again later." }, 429);
   }
-  if ((daily?.count || 0) >= positiveInteger(env.MAX_GENERATIONS_PER_DAY, 30)) {
+  if ((daily?.count || 0) >= positiveInteger(env.MAX_GENERATIONS_PER_DAY, 60)) {
     return json({ error: "You reached today's public-beta generation limit." }, 429);
   }
   const providerLimit = provider === "OpenAI"
-    ? positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 750)
+    ? positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 1500)
     : provider === "xAI"
-      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 750)
-      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 750);
+      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 1500)
+      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 1500);
   if ((providerDaily?.count || 0) >= providerLimit) {
     return json({ error: `${provider} reached today's public-beta capacity. No credits were charged.` }, 503);
   }

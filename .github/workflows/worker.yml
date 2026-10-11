@@ -28,6 +28,8 @@ jobs:
       AZURE_MAI_ENDPOINT: ${{ secrets.AZURE_MAI_ENDPOINT }}
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      BETA_ACCESS_HASH: ${{ secrets.BETA_ACCESS_HASH }}
+      BETA_ADMIN_HASH: ${{ secrets.BETA_ADMIN_HASH }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -82,5 +84,7 @@ jobs:
           put_secret AZURE_MAI_ENDPOINT "$AZURE_MAI_ENDPOINT"
           put_secret STRIPE_SECRET_KEY "$STRIPE_SECRET_KEY"
           put_secret STRIPE_WEBHOOK_SECRET "$STRIPE_WEBHOOK_SECRET"
+          put_secret BETA_ACCESS_HASH "$BETA_ACCESS_HASH"
+          put_secret BETA_ADMIN_HASH "$BETA_ADMIN_HASH"
       - name: Verify production health
         run: curl --fail --retry 10 --retry-delay 6 --retry-all-errors https://api.indermit.com/v1/health
