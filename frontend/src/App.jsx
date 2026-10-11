@@ -100,13 +100,15 @@ function Studio({ getToken, beta }) {
   const [message, setMessage] = useState("");
   const [admin, setAdmin] = useState(null);
   const [members, setMembers] = useState([]);
+  const [adminRefreshing, setAdminRefreshing] = useState(false);
+  const [adminUpdatedAt, setAdminUpdatedAt] = useState(null);
 
   const loadAccount = useCallback(async () => setAccount(await apiRequest("/v1/account", getToken)), [getToken]);
   const loadImages = useCallback(async () => { const result = await apiRequest("/v1/generations", getToken); setImages(result.generations || []); }, [getToken]);
   const loadAdmin = useCallback(async () => {
     if (beta.role !== "admin") return;
     const [status, memberList] = await Promise.all([apiRequest("/v1/admin/status", getToken), apiRequest("/v1/admin/members", getToken)]);
-    setAdmin(status); setMembers(memberList.members || []);
+    setAdmin(status); setMembers(memberList.members || []); setAdminUpdatedAt(new Date().toISOString());
   }, [beta.role, getToken]);
 
   useEffect(() => { Promise.all([loadAccount(), loadImages(), loadAdmin()]).catch((error) => setMessage(error.message)); }, [loadAccount, loadAdmin, loadImages]);
@@ -140,12 +142,20 @@ function Studio({ getToken, beta }) {
     catch (error) { setMessage(error.message); }
   }
 
+  async function refreshAdmin() {
+    if (adminRefreshing) return;
+    setAdminRefreshing(true); setMessage("");
+    try { await loadAdmin(); }
+    catch (error) { setMessage(error.message); }
+    finally { setAdminRefreshing(false); }
+  }
+
   const activeModel = MODELS.find((item) => item.id === model);
   return <div className="app-shell"><BetaBar /><header className="app-header"><BrandWordmark /><nav className="app-nav">
     <button className={view === "create" ? "active" : ""} onClick={() => setView("create")}><Sparkles size={15} /> Create</button>
     <button className={view === "images" ? "active" : ""} onClick={() => setView("images")}><ImageIcon size={15} /> My images</button>
     <button className={view === "credits" ? "active" : ""} onClick={() => setView("credits")}><CreditCard size={15} /> Buy credits</button>
-    {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); loadAdmin(); }}><Gauge size={15} /> Owner</button>}
+    {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); refreshAdmin(); }}><Gauge size={15} /> Owner</button>}
   </nav><div className="account-cluster"><span><strong>{account.creditBalance}</strong> credits</span><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
     {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PUBLIC BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite, Grok Imagine 2.0 Low, and GPT Image 2.5 Sunburst Low are available now.</p></div>
@@ -161,7 +171,7 @@ function Studio({ getToken, beta }) {
     </section>}
     {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.provider} · {item.creditCost} credits</span><a href={item.downloadUrl}>Download</a></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations will appear here." />}</section>}
     {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PUBLIC BETA CHECKOUT</span><h1>Buy Indermit credits</h1><p>The first 25 customers who complete payment receive public-beta generation access.</p></div><div className="mode-card"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Secure Stripe checkout is connected" : "Checkout is being configured"}</strong><p>{beta.stripeReady ? `${beta.paidBetaRemaining ?? 25} purchasing places remain. Failed generations are automatically refunded.` : "Purchasing stays disabled until the live Stripe key and webhook are both available."}</p></div></div><div className="bundle-grid beta-bundle-grid">{BUNDLES.map((bundle) => <article className="beta-package" key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits · one-time purchase</p><div className="bundle-model-list"><b>Included models</b>{MODELS.filter((item) => item.id !== "auto").map((item) => <div key={item.id}><span><strong>{item.name}</strong><small>{item.provider} · 1K low quality</small></span><em>{item.credits} {item.credits === 1 ? "credit" : "credits"} / image</em></div>)}</div><div className="package-usage-limit"><b>Public-beta usage limits</b><span>Up to 10 completed images per hour and 30 completed images per day, per account.</span></div><button disabled={!beta.stripeReady || busy || account.creditBalance > 0 || beta.purchaseEligible === false} onClick={() => checkout(bundle.id)}>Buy 100 credits</button></article>)}</div><p className="beta-package-note">One package at a time: use your current credits before purchasing another. Accounts remain open after all 25 purchasing places are claimed.</p></section>}
-    {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={loadAdmin} />}
+    {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={refreshAdmin} refreshing={adminRefreshing} updatedAt={adminUpdatedAt} />}
   </main>
   <SiteFooter />
   {generationProgress && <div className="generation-overlay" role="dialog" aria-modal="true" aria-label="Creating your image"><div className="generation-progress-card">
@@ -176,9 +186,9 @@ function Studio({ getToken, beta }) {
   </div>;
 }
 
-function AdminView({ data, members, onAdjust, onRefresh }) {
+function AdminView({ data, members, onAdjust, onRefresh, refreshing, updatedAt }) {
   if (!data) return <div className="loading-state"><LoaderCircle className="spin" /> Loading owner dashboard…</div>;
-  return <section className="workspace-panel admin-view"><div className="page-heading compact"><span>OWNER PORTAL</span><h1>Private beta operations</h1><button className="icon-button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button></div>
+  return <section className="workspace-panel admin-view"><div className="page-heading compact"><span>OWNER PORTAL</span><h1>Private beta operations</h1><button type="button" className="icon-button" onClick={onRefresh} disabled={refreshing}><RefreshCw className={refreshing ? "spin" : ""} size={15} /> {refreshing ? "Refreshing…" : "Refresh"}</button>{updatedAt && <small className="admin-refresh-time" aria-live="polite">Last updated {formatRefreshTime(updatedAt)}</small>}</div>
     <div className="metric-grid"><Metric label="Paid beta users" value={`${data.summary.paidBetaUsers}/25`} icon={<Users />} /><Metric label="Generations" value={data.summary.generations} icon={<Sparkles />} /><Metric label="Completed" value={data.summary.completed} tone="good" /><Metric label="Failed" value={data.summary.failed} tone={data.summary.failed ? "bad" : "good"} /></div>
     <div className="admin-columns"><section className="admin-card"><h2>Model status</h2>{data.models.map((model) => <div className="status-row" key={model.id}><div><strong>{model.provider} · {model.name}</strong><span>{model.credits} credits per image</span></div><em className={model.enabled ? "online" : "offline"}>{model.enabled ? "Available" : "Coming soon"}</em></div>)}<div className="status-row"><div><strong>Stripe</strong><span>Webhook: {data.stripe.webhookReady ? "ready" : "not configured"}</span></div><em className={data.stripe.mode === "test" ? "online" : "offline"}>{data.stripe.mode}</em></div></section>
       <section className="admin-card"><h2>Estimated provider spend today</h2>{data.providerEconomics?.map((item) => <div className="status-row" key={item.provider}><div><strong>{item.provider}</strong><span>{item.attempts} of {item.dailyLimit} attempts · about ${item.estimatedSpendUsd.toFixed(2)} spent</span></div><em className="online">${item.estimatedUnitCostUsd.toFixed(4)} / image</em></div>)}</section></div>
@@ -190,6 +200,7 @@ function AdminView({ data, members, onAdjust, onRefresh }) {
 function Metric({ label, value, icon, tone = "" }) { return <article className={`metric ${tone}`}>{icon}<span>{label}</span><strong>{value}</strong></article>; }
 function EmptyState({ icon, title, text }) { return <div className="empty-state">{icon}<h2>{title}</h2><p>{text}</p></div>; }
 function formatDate(value) { return value ? new Date(`${value.replace(" ", "T")}Z`).toLocaleString() : "—"; }
+function formatRefreshTime(value) { return value ? new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "—"; }
 function Composer({ isSignedIn, onActivate }) {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("auto");

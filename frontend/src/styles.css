@@ -233,6 +233,8 @@ footer nav a:hover { color: #fff; }
 .notice-banner { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 24px; padding: 13px 16px; border: 1px solid rgba(255,118,139,.23); border-radius: 10px; color: #ffb1bd; background: rgba(140,21,45,.12); font-size: 12px; }
 .notice-banner button { border: 0; color: inherit; background: transparent; cursor: pointer; }
 .icon-button { min-height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: #9da5b4; background: rgba(255,255,255,.04); cursor: pointer; font-size: 11px; }
+.icon-button:disabled { opacity: .65; cursor: wait; }
+.admin-refresh-time { display: block; margin-top: 7px; color: #666f7f; font-size: 10px; }
 .empty-state { min-height: 380px; display: flex; align-items: center; justify-content: center; flex-direction: column; border: 1px dashed rgba(255,255,255,.12); border-radius: 16px; color: #515969; text-align: center; }
 .empty-state svg { width: 38px; height: 38px; }
 .empty-state h2 { margin: 18px 0 5px; color: #bac1cf; font: 650 21px Manrope, sans-serif; }
