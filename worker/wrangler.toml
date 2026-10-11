@@ -19,11 +19,11 @@ HOURLY_LIMIT_RESET_AT = "2026-10-09T15:17:17Z"
 MAX_GENERATIONS_PER_DAY = "30"
 MAX_CONCURRENT_GENERATIONS = "1"
 MAX_GLOBAL_CONCURRENT_GENERATIONS = "3"
-# Provider-wide beta safeguards. These sit above the per-account 30/day limit.
-# They are sized to current prepaid balances with a reserve for billing latency.
+# Provider-wide beta safeguards. With 25 paid beta customers and a per-account
+# maximum of 30 completed images per day, 750 is the maximum possible demand.
 OPENAI_DAILY_GENERATION_LIMIT = "750"
-GOOGLE_DAILY_GENERATION_LIMIT = "300"
-XAI_DAILY_GENERATION_LIMIT = "450"
+GOOGLE_DAILY_GENERATION_LIMIT = "750"
+XAI_DAILY_GENERATION_LIMIT = "750"
 FRONTEND_URL = "https://indermit.com"
 CLERK_ISSUER = "https://clerk.indermit.com"
 CLERK_AUTHORIZED_PARTIES = "https://indermit.com"

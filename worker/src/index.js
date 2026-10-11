@@ -275,8 +275,8 @@ async function handleAdmin(request, env, _userId, url) {
     };
     const providerLimits = {
       OpenAI: positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 750),
-      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 300),
-      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 450),
+      Google: positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 750),
+      xAI: positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 750),
     };
     const usageDashboard = buildUsageDashboard(providerUsage.results, providerCosts, providerLimits);
     return json({
@@ -444,8 +444,8 @@ async function checkGenerationLimits(env, userId, provider) {
   const providerLimit = provider === "OpenAI"
     ? positiveInteger(env.OPENAI_DAILY_GENERATION_LIMIT, 750)
     : provider === "xAI"
-      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 450)
-      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 300);
+      ? positiveInteger(env.XAI_DAILY_GENERATION_LIMIT, 750)
+      : positiveInteger(env.GOOGLE_DAILY_GENERATION_LIMIT, 750);
   if ((providerDaily?.count || 0) >= providerLimit) {
     return json({ error: `${provider} reached today's public-beta capacity. No credits were charged.` }, 503);
   }
