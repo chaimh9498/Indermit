@@ -13,8 +13,10 @@ export async function createCheckoutSession(env, userId, bundleId, currentBalanc
   const bundle = CREDIT_BUNDLES[bundleId];
   if (!bundle) throw new Error("Unknown credit package");
   const maxAccountCredits = Number(env.MAX_ACCOUNT_CREDITS || 200);
-  if (currentBalance + bundle.credits > maxAccountCredits) {
-    throw new Error(`Public beta accounts may hold up to ${maxAccountCredits} credits at a time`);
+  const repurchaseThreshold = 5;
+  const maxPostPurchaseCredits = maxAccountCredits + repurchaseThreshold;
+  if (currentBalance + bundle.credits > maxPostPurchaseCredits) {
+    throw new Error(`You can purchase another package when your balance reaches ${repurchaseThreshold} credits or less`);
   }
   const params = new URLSearchParams({
     mode: "payment",
