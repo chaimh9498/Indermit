@@ -189,7 +189,7 @@ async function getSignupCreditPromotion(env, userId) {
 }
 
 async function beginPaidBetaCheckout(env, userId, bundleId, creditBalance) {
-  if (creditBalance > 0) throw new Error("Use your current credits before purchasing another package.");
+  if (creditBalance > 5) throw new Error("You can purchase another package when your balance reaches 5 credits or less.");
   await env.DB.batch([
     env.DB.prepare("DELETE FROM checkout_locks WHERE expires_at <= CURRENT_TIMESTAMP"),
     env.DB.prepare(
