@@ -219,7 +219,7 @@ function Studio({ getToken, beta }) {
   </main>
   <SiteFooter />
   {generationProgress && <div className="generation-overlay" role="dialog" aria-modal="true" aria-label="Creating your image"><div className="generation-progress-card">
-    <div className="generation-visual"><div className="generation-glow" /><div className="generation-frame"><Sparkles size={31} /></div><div className="generation-ring"><span /></div></div>
+    <div className="generation-visual"><div className="generation-glow" /><video className="generation-logo-animation" src="/indermit-generation-loader.mp4" poster="/indermit-mark.webp" autoPlay loop muted playsInline preload="auto" aria-hidden="true" /></div>
     <span className="section-label">{generationProgress.status === "creating" ? (generationProgress.operationType === "edit" ? "EDITING" : "GENERATING") : "FINALIZING"}</span>
     <h2>{generationProgress.status === "creating" ? (generationProgress.operationType === "edit" ? "Editing your image…" : "Creating your image…") : "Your image is ready…"}</h2>
     <p>{generationProgress.status === "creating" ? `${generationProgress.model} is ${generationProgress.operationType === "edit" ? "applying your changes" : "turning your prompt into an image"}.` : "Preparing the finished image in your studio."}</p>
