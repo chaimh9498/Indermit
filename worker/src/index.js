@@ -46,6 +46,27 @@ async function getPublicSignupPromotion(env) {
   });
 }
 
+async function getClerkUserCount(env) {
+  if (!env.CLERK_SECRET_KEY) return null;
+
+  try {
+    const response = await fetch("https://api.clerk.com/v1/users/count", {
+      headers: { Authorization: `Bearer ${env.CLERK_SECRET_KEY}` },
+    });
+    if (!response.ok) {
+      console.error("Clerk user count failed", { status: response.status });
+      return null;
+    }
+
+    const payload = await response.json();
+    const count = Number(payload?.total_count);
+    return Number.isFinite(count) ? count : null;
+  } catch (error) {
+    console.error("Clerk user count failed", { message: error?.message });
+    return null;
+  }
+}
+
 async function handleAuthenticated(request, env, _context, { userId }) {
   const url = new URL(request.url);
   await ensureUser(env, userId);
@@ -267,7 +288,8 @@ async function beginPaidBetaCheckout(env, userId, bundleId, creditBalance) {
 
 async function handleAdmin(request, env, _userId, url) {
   if (request.method === "GET" && url.pathname === "/v1/admin/status") {
-    const [signedUpUsers, betaMembers, signupBonusUsers, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
+    const [clerkUsers, databaseUserRecords, betaMembers, signupBonusUsers, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
+      getClerkUserCount(env),
       env.DB.prepare("SELECT COUNT(*) AS count FROM users").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM signup_credit_grants").first(),
@@ -322,7 +344,9 @@ async function handleAdmin(request, env, _userId, url) {
     const usageDashboard = buildUsageDashboard(providerUsage.results, providerLimits);
     return json({
       summary: {
-        signedUpUsers: signedUpUsers?.count || 0,
+        clerkUsers: clerkUsers ?? databaseUserRecords?.count ?? 0,
+        clerkUsersAvailable: clerkUsers !== null,
+        databaseUserRecords: databaseUserRecords?.count || 0,
         betaMembers: betaMembers?.count || 0,
         signupBonusUsers: signupBonusUsers?.count || 0,
         paidBetaUsers: paidUsers?.count || 0,

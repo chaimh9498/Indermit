@@ -298,7 +298,7 @@ footer nav a:hover { color: #fff; }
 .bundle-grid p { margin: 0 0 22px; color: #78808e; font-size: 11px; }
 .bundle-grid button { width: 100%; min-height: 40px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: #c6ccd8; background: rgba(255,255,255,.06); font-size: 11px; }
 .bundle-grid button:disabled { color: #565d69; cursor: not-allowed; }
-.metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .metric { min-height: 118px; display: grid; grid-template-columns: 1fr auto; align-content: space-between; gap: 8px; padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 13px; background: rgba(255,255,255,.025); }
 .metric svg { width: 17px; color: #64738d; }
 .metric span { grid-column: 1; color: #6f7888; font-size: 10px; }
