@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, useAuth, useUser } from "@clerk/clerk-react";
-import { ArrowRight, ChevronDown, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Send, Sparkles, Users, X } from "lucide-react";
+import { ArrowRight, ChevronDown, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, Paperclip, PartyPopper, RefreshCw, Send, Sparkles, Users, X } from "lucide-react";
 import { apiRequest } from "./api";
 
 const MODELS = [
@@ -21,6 +21,7 @@ function App() {
   const [accessCode, setAccessCode] = useState(() => sessionStorage.getItem("indermit-beta-code") || "");
   const [accessError, setAccessError] = useState("");
   const [accessBusy, setAccessBusy] = useState(false);
+  const [showSignupBonus, setShowSignupBonus] = useState(false);
 
   const checkMembership = useCallback(async () => {
     if (!isLoaded || !isSignedIn) {
@@ -37,6 +38,20 @@ function App() {
   }, [getToken, isLoaded, isSignedIn]);
 
   useEffect(() => { checkMembership(); }, [checkMembership]);
+  useEffect(() => {
+    if (beta.signupBonusCelebrationPending) setShowSignupBonus(true);
+  }, [beta.signupBonusCelebrationPending]);
+
+  async function dismissSignupBonus() {
+    setShowSignupBonus(false);
+    setBeta((current) => ({ ...current, signupBonusCelebrationPending: false }));
+    try {
+      await apiRequest("/v1/promotions/signup-bonus/acknowledge", getToken, { method: "POST", body: "{}" });
+    } catch {
+      // The reward is already safe in the account. A failed acknowledgement
+      // only means the welcome may appear again on the next visit.
+    }
+  }
 
   async function activateBeta(event) {
     event.preventDefault();
@@ -55,16 +70,18 @@ function App() {
     }
   }
 
-  if (beta.enrolled) return <Studio getToken={getToken} beta={beta} />;
+  const content = beta.enrolled
+    ? <Studio getToken={getToken} beta={beta} />
+    : <Landing accessCode={accessCode} accessError={accessError} accessOpen={accessOpen} accessBusy={accessBusy} betaLoading={beta.loading} isSignedIn={isSignedIn} signupBonusBalance={beta.signupBonusBalance} onAccessCode={setAccessCode} onAccessOpen={setAccessOpen} onActivate={activateBeta} />;
 
-  return <Landing accessCode={accessCode} accessError={accessError} accessOpen={accessOpen} accessBusy={accessBusy} betaLoading={beta.loading} isSignedIn={isSignedIn} onAccessCode={setAccessCode} onAccessOpen={setAccessOpen} onActivate={activateBeta} />;
+  return <>{content}{showSignupBonus && <SignupBonusCelebration credits={beta.signupBonusCredits || 2} onClose={dismissSignupBonus} />}</>;
 }
 
 function Landing(props) {
   return (
     <div className="site-shell">
       <div className="ambient ambient-one" aria-hidden="true" /><div className="ambient ambient-two" aria-hidden="true" />
-      <BetaBar /><Header onAccess={() => props.onAccessOpen(true)} />
+      <BetaBar /><Header signupBonusBalance={props.signupBonusBalance} />
       <main>
         <section className="hero"><div className="hero-copy">
           <h1>AI image generation.<br /><span>All in one place.</span></h1>
@@ -90,7 +107,7 @@ function Landing(props) {
 function Studio({ getToken, beta }) {
   const { user } = useUser();
   const [view, setView] = useState("create");
-  const [account, setAccount] = useState({ creditBalance: 0 });
+  const [account, setAccount] = useState({ creditBalance: 0, paidCreditBalance: 0, promoCreditBalance: 0 });
   const [images, setImages] = useState([]);
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("auto");
@@ -133,7 +150,12 @@ function Studio({ getToken, beta }) {
           sourceGenerationId: sourceImage?.generationId,
         }),
       });
-      setAccount((current) => ({ ...current, creditBalance: result.creditBalance }));
+      setAccount((current) => ({
+        ...current,
+        creditBalance: result.creditBalance,
+        paidCreditBalance: result.paidCreditBalance,
+        promoCreditBalance: result.promoCreditBalance,
+      }));
       setImages((current) => [result.generation, ...current]);
       setLatestGeneration(result.generation);
       setGenerationProgress({ prompt: submittedPrompt, model: activeModel.name, operationType, status: "loading", imageUrl: result.generation.imageUrl });
@@ -229,7 +251,7 @@ function Studio({ getToken, beta }) {
     <button className={view === "images" ? "active" : ""} onClick={() => setView("images")}><ImageIcon size={15} /> My images</button>
     <button className={view === "credits" ? "active" : ""} onClick={() => setView("credits")}><CreditCard size={15} /> Buy credits</button>
     {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); refreshAdmin(); }}><Gauge size={15} /> Owner</button>}
-  </nav><div className="account-cluster"><span><strong>{account.creditBalance}</strong> credits</span><UserButton /></div></header>
+  </nav><div className="account-cluster"><CreditBalance balance={account.creditBalance} promoBalance={account.promoCreditBalance} /><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
     {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PUBLIC BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite, Grok Imagine 2.0 Low, and GPT Image 2.5 Sunburst Low are available now.</p></div>
       <form className="live-composer" onSubmit={generate}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder={sourceImage ? "Describe how you want to edit this image…" : "Describe the image you want to create…"} />
@@ -315,7 +337,20 @@ function Composer({ isSignedIn, onActivate }) {
   return <div className="composer"><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder="Describe the image you want to create…" /><div className="composer-footer"><label className="model-menu"><span className="model-icon"><Sparkles size={15} /></span><span className="model-copy"><small>Model</small><strong>{activeModel.provider} · {activeModel.name}</strong></span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item.id} value={item.id}>{item.provider} · {item.name} · {item.credits} credits</option>)}</select><ChevronDown size={16} /></label>{isSignedIn ? generateButton : <SignUpButton mode="modal">{generateButton}</SignUpButton>}</div><p className="preview-note">Write your prompt and choose a model. Create an account when you are ready to generate.</p></div>;
 }
 function BetaBar() { return <div className="beta-bar"><span className="beta-dot" /> Indermit is in public beta. <span>Accounts are open. Credit purchases are limited.</span></div>; }
-function Header() { return <header className="site-header"><a className="brand" href="/" aria-label="Indermit home"><BrandWordmark /></a><div className="header-actions"><SignedOut><SignInButton mode="modal"><button className="button button-quiet">Sign in</button></SignInButton><SignUpButton mode="modal"><button className="button button-secondary">Create account</button></SignUpButton></SignedOut><SignedIn><UserButton /></SignedIn></div></header>; }
+function Header({ signupBonusBalance = 0 }) { return <header className="site-header"><a className="brand" href="/" aria-label="Indermit home"><BrandWordmark /></a><div className="header-actions"><SignedOut><SignInButton mode="modal"><button className="button button-quiet">Sign in</button></SignInButton><SignUpButton mode="modal"><button className="button button-secondary">Create account</button></SignUpButton></SignedOut><SignedIn>{signupBonusBalance > 0 && <CreditBalance balance={signupBonusBalance} promoBalance={signupBonusBalance} />}<UserButton /></SignedIn></div></header>; }
+function CreditBalance({ balance = 0, promoBalance = 0 }) { return <span className={promoBalance > 0 ? "credit-balance free" : "credit-balance"}><strong>{promoBalance > 0 ? promoBalance : balance}</strong> {promoBalance > 0 ? "free credits left" : "credits"}</span>; }
+function SignupBonusCelebration({ credits, onClose }) {
+  return <div className="bonus-backdrop" role="dialog" aria-modal="true" aria-labelledby="signup-bonus-title">
+    <section className="bonus-card">
+      <div className="confetti" aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <i key={index} style={{ "--i": index }} />)}</div>
+      <div className="bonus-icon" aria-hidden="true"><PartyPopper size={38} /></div>
+      <span className="section-label">WELCOME TO INDERMIT</span>
+      <h2 id="signup-bonus-title">Congratulations!</h2>
+      <p>You received <strong>{credits} free credits</strong> to create your first AI images.</p>
+      <button className="button button-primary bonus-continue" onClick={onClose}>Start creating</button>
+    </section>
+  </div>;
+}
 function SiteFooter() { return <footer><a className="brand footer-brand" href="/" aria-label="Indermit home"><BrandWordmark /></a><nav aria-label="Legal and support"><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="mailto:support@indermit.com">Support</a></nav></footer>; }
 function BrandWordmark() { return <img className="brand-wordmark" src="/indermit-wordmark-official.png" alt="Indermit" />; }
 
