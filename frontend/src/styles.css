@@ -257,6 +257,8 @@ footer nav a:hover { color: #fff; }
 .image-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .image-card-actions button { padding: 0; border: 0; color: #a9c7ff; background: transparent; cursor: pointer; font-size: 10px; font-weight: 700; }
 .mode-card { max-width: 780px; display: flex; gap: 15px; margin: 0 auto 24px; padding: 18px; border: 1px solid rgba(68,220,238,.17); border-radius: 12px; color: var(--cyan); background: rgba(32,156,175,.06); }
+.checkout-bottom-banner { max-width: 360px; margin: 22px auto 0; align-items: center; justify-content: center; text-align: center; }
+.checkout-bottom-banner strong { color: #dbeaff; }
 .checkout-models { max-width: 900px; margin: 0 auto 18px; }
 .beta-bundle-grid { max-width: 360px; grid-template-columns: 1fr; }
 .beta-package-note { max-width: 560px; margin: 16px auto 0; color: #697282; font-size: 10px; line-height: 1.55; text-align: center; }
