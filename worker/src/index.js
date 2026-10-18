@@ -153,7 +153,252 @@ async function handleAuthenticated(request, env, _context, { userId }) {
     return createGeneration(request, env, userId, url.origin);
   }
 
+  if (url.pathname === "/v1/plaa-i" && request.method === "GET") {
+    return getPlaaIState(env, userId, url.origin);
+  }
+
+  if (url.pathname === "/v1/plaa-i/queue" && request.method === "POST") {
+    return queuePlaaIMatch(env, userId, url.origin);
+  }
+
+  if (url.pathname === "/v1/plaa-i/leave" && request.method === "POST") {
+    return leavePlaaIMatch(env, userId);
+  }
+
+  const plaaISubmitMatch = url.pathname.match(/^\/v1\/plaa-i\/matches\/([0-9a-f-]+)\/submit$/i);
+  if (plaaISubmitMatch && request.method === "POST") {
+    return submitPlaaIEntry(request, env, userId, url.origin, plaaISubmitMatch[1]);
+  }
+
   return json({ error: "Not found" }, 404);
+}
+
+const PLAA_I_CATEGORIES = [
+  "A city from the future",
+  "An impossible animal",
+  "A legendary sports moment",
+  "A new world beneath the ocean",
+  "A movie poster for a film that does not exist",
+  "The most dramatic political rally",
+  "A product nobody has invented yet",
+  "A place where nature took over",
+  "The ultimate dream home",
+  "A historical moment reimagined",
+  "A hero entering the final battle",
+  "The strangest restaurant in the world",
+];
+
+async function getPlaaIState(env, userId, apiOrigin) {
+  const [current, waiting, completed, wins, leaderboard] = await Promise.all([
+    env.DB.prepare(
+      `SELECT * FROM plaa_i_matches
+       WHERE (player_one_id = ? OR player_two_id = ?) AND status != 'cancelled'
+       ORDER BY CASE status WHEN 'waiting' THEN 0 WHEN 'active' THEN 1 WHEN 'judging' THEN 2 ELSE 3 END, created_at DESC
+       LIMIT 1`,
+    ).bind(userId, userId).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM plaa_i_matches WHERE status = 'waiting'").first(),
+    env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM plaa_i_matches WHERE status = 'completed' AND (player_one_id = ? OR player_two_id = ?)",
+    ).bind(userId, userId).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM plaa_i_matches WHERE status = 'completed' AND winner_user_id = ?").bind(userId).first(),
+    env.DB.prepare(
+      `SELECT winner_user_id, COUNT(*) AS wins FROM plaa_i_matches
+       WHERE status = 'completed' AND winner_user_id IS NOT NULL
+       GROUP BY winner_user_id ORDER BY wins DESC, MAX(completed_at) ASC LIMIT 10`,
+    ).all(),
+  ]);
+  return json({
+    match: current ? await serializePlaaIMatch(env, current, userId, apiOrigin) : null,
+    waitingPlayers: Number(waiting?.count || 0),
+    stats: { played: Number(completed?.count || 0), wins: Number(wins?.count || 0) },
+    leaderboard: leaderboard.results.map((row, index) => ({
+      rank: index + 1,
+      name: row.winner_user_id === userId ? "You" : `Player ${String(row.winner_user_id).slice(-4).toUpperCase()}`,
+      wins: Number(row.wins || 0),
+    })),
+  });
+}
+
+async function queuePlaaIMatch(env, userId, apiOrigin) {
+  const existing = await env.DB.prepare(
+    `SELECT * FROM plaa_i_matches WHERE (player_one_id = ? OR player_two_id = ?)
+     AND status IN ('waiting', 'active', 'judging') ORDER BY created_at DESC LIMIT 1`,
+  ).bind(userId, userId).first();
+  if (existing) return json({ match: await serializePlaaIMatch(env, existing, userId, apiOrigin) });
+
+  const opponent = await env.DB.prepare(
+    `SELECT id FROM plaa_i_matches WHERE status = 'waiting' AND player_one_id != ?
+     AND created_at >= datetime('now', '-15 minutes') ORDER BY created_at ASC LIMIT 1`,
+  ).bind(userId).first();
+  if (opponent) {
+    const joined = await env.DB.prepare(
+      `UPDATE plaa_i_matches SET player_two_id = ?, status = 'active', started_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'waiting' AND player_two_id IS NULL`,
+    ).bind(userId, opponent.id).run();
+    if (joined.meta.changes) {
+      const match = await env.DB.prepare("SELECT * FROM plaa_i_matches WHERE id = ?").bind(opponent.id).first();
+      return json({ match: await serializePlaaIMatch(env, match, userId, apiOrigin) });
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const category = PLAA_I_CATEGORIES[Math.floor(Math.random() * PLAA_I_CATEGORIES.length)];
+  await env.DB.prepare(
+    "INSERT INTO plaa_i_matches (id, category, player_one_id) VALUES (?, ?, ?)",
+  ).bind(id, category, userId).run();
+  const match = await env.DB.prepare("SELECT * FROM plaa_i_matches WHERE id = ?").bind(id).first();
+  return json({ match: await serializePlaaIMatch(env, match, userId, apiOrigin) }, 201);
+}
+
+async function leavePlaaIMatch(env, userId) {
+  const result = await env.DB.prepare(
+    `UPDATE plaa_i_matches SET status = 'cancelled'
+     WHERE player_one_id = ? AND status = 'waiting' AND player_two_id IS NULL`,
+  ).bind(userId).run();
+  return json({ left: Boolean(result.meta.changes) });
+}
+
+async function submitPlaaIEntry(request, env, userId, apiOrigin, matchId) {
+  const match = await env.DB.prepare(
+    `SELECT * FROM plaa_i_matches WHERE id = ? AND status = 'active'
+     AND (player_one_id = ? OR player_two_id = ?)`,
+  ).bind(matchId, userId, userId).first();
+  if (!match) return json({ error: "This challenge is not available." }, 404);
+
+  const input = await request.json();
+  const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
+  if (!prompt || prompt.length > 1200) return json({ error: "Prompt must contain 1–1,200 characters." }, 400);
+  if (!MODEL_CONFIG[input.model]) return json({ error: "Choose a supported model." }, 400);
+
+  const reserved = await env.DB.prepare(
+    `INSERT OR IGNORE INTO plaa_i_entries (match_id, user_id, prompt, model) VALUES (?, ?, ?, ?)`,
+  ).bind(matchId, userId, prompt, input.model).run();
+  if (!reserved.meta.changes) return json({ error: "You already submitted an image for this challenge." }, 409);
+
+  const generationRequest = new Request(request.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, model: input.model, aspectRatio: "1:1" }),
+  });
+  const generationResponse = await createGeneration(generationRequest, env, userId, apiOrigin);
+  const generationPayload = await generationResponse.json();
+  if (!generationResponse.ok) {
+    await env.DB.prepare("DELETE FROM plaa_i_entries WHERE match_id = ? AND user_id = ? AND generation_id IS NULL").bind(matchId, userId).run();
+    return json(generationPayload, generationResponse.status);
+  }
+
+  await env.DB.prepare(
+    "UPDATE plaa_i_entries SET generation_id = ? WHERE match_id = ? AND user_id = ?",
+  ).bind(generationPayload.generation.id, matchId, userId).run();
+
+  const entries = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM plaa_i_entries WHERE match_id = ? AND generation_id IS NOT NULL",
+  ).bind(matchId).first();
+  if (Number(entries?.count || 0) === 2) {
+    await env.DB.prepare("UPDATE plaa_i_matches SET status = 'judging' WHERE id = ? AND status = 'active'").bind(matchId).run();
+    await judgePlaaIMatch(env, matchId);
+  }
+
+  const updated = await env.DB.prepare("SELECT * FROM plaa_i_matches WHERE id = ?").bind(matchId).first();
+  return json({
+    match: await serializePlaaIMatch(env, updated, userId, apiOrigin),
+    creditBalance: generationPayload.creditBalance,
+    paidCreditBalance: generationPayload.paidCreditBalance,
+    promoCreditBalance: generationPayload.promoCreditBalance,
+  }, 201);
+}
+
+async function judgePlaaIMatch(env, matchId) {
+  const match = await env.DB.prepare("SELECT * FROM plaa_i_matches WHERE id = ?").bind(matchId).first();
+  const { results } = await env.DB.prepare(
+    `SELECT e.user_id, g.object_key, g.mime_type FROM plaa_i_entries e
+     JOIN generations g ON g.id = e.generation_id
+     WHERE e.match_id = ? AND g.status = 'completed' ORDER BY e.created_at ASC`,
+  ).bind(matchId).all();
+  if (results.length !== 2) return;
+
+  let winnerIndex = 0;
+  let reason = "The beta judge selected the image with the strongest overall execution.";
+  try {
+    if (!env.GOOGLE_API_KEY) throw new Error("Google judge is not configured");
+    const images = await Promise.all(results.map(async (entry) => {
+      const object = await env.IMAGES.get(entry.object_key);
+      if (!object) throw new Error("Challenge image is missing");
+      return { data: bytesToBase64(new Uint8Array(await object.arrayBuffer())), mimeType: entry.mime_type || "image/png" };
+    }));
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.GOOGLE_JUDGE_MODEL || "gemini-2.5-flash-lite")}:generateContent`,
+      {
+        method: "POST",
+        headers: { "x-goog-api-key": env.GOOGLE_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { text: `You are the neutral judge for the Plaa I Challenge. Category: ${match.category}. Compare Image A and Image B. Judge prompt-category fit, visual quality, creativity, composition, and clarity. Ignore watermarks and do not favor a provider. Return a concise reason without mentioning private prompts.` },
+            { text: "Image A" },
+            { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
+            { text: "Image B" },
+            { inlineData: { mimeType: images[1].mimeType, data: images[1].data } },
+          ] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: { winner: { type: "STRING", enum: ["A", "B"] }, reason: { type: "STRING" } },
+              required: ["winner", "reason"],
+            },
+          },
+        }),
+      },
+    );
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message || "Judge request failed");
+    const text = payload.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text;
+    const verdict = JSON.parse(text || "{}");
+    winnerIndex = verdict.winner === "B" ? 1 : 0;
+    reason = String(verdict.reason || reason).slice(0, 500);
+  } catch (error) {
+    console.error("Plaa I judge failed", { matchId, message: error?.message });
+    const digest = await sha256Hex(matchId);
+    winnerIndex = parseInt(digest.slice(0, 2), 16) % 2;
+    reason = "The beta judge used the automatic tiebreaker after the visual review service was unavailable.";
+  }
+
+  await env.DB.prepare(
+    `UPDATE plaa_i_matches SET status = 'completed', winner_user_id = ?, judge_reason = ?, completed_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND status = 'judging'`,
+  ).bind(results[winnerIndex].user_id, reason, matchId).run();
+}
+
+async function serializePlaaIMatch(env, match, userId, apiOrigin) {
+  const { results } = await env.DB.prepare(
+    `SELECT e.user_id, e.prompt, e.model, e.created_at, g.id AS generation_id, g.provider, g.credit_cost
+     FROM plaa_i_entries e LEFT JOIN generations g ON g.id = e.generation_id
+     WHERE e.match_id = ? ORDER BY e.created_at ASC`,
+  ).bind(match.id).all();
+  const completed = match.status === "completed";
+  const entries = await Promise.all(results.map(async (entry) => ({
+    side: entry.user_id === match.player_one_id ? "A" : "B",
+    isYou: entry.user_id === userId,
+    prompt: completed || entry.user_id === userId ? entry.prompt : null,
+    model: entry.model,
+    provider: entry.provider,
+    creditCost: entry.credit_cost,
+    imageUrl: entry.generation_id ? `${apiOrigin}/v1/images/${entry.generation_id}?token=${await hmacHex(env.IMAGE_SIGNING_SECRET, entry.generation_id)}` : null,
+  })));
+  const youSubmitted = entries.some((entry) => entry.isYou && entry.imageUrl);
+  const opponentSubmitted = entries.some((entry) => !entry.isYou && entry.imageUrl);
+  return {
+    id: match.id,
+    category: match.category,
+    status: match.status,
+    opponentJoined: Boolean(match.player_two_id),
+    youSubmitted,
+    opponentSubmitted,
+    result: completed ? (match.winner_user_id === userId ? "win" : "loss") : null,
+    judgeReason: completed ? match.judge_reason : null,
+    entries: completed ? entries : entries.filter((entry) => entry.isYou),
+    createdAt: match.created_at,
+  };
 }
 
 async function requireVerifiedCheckoutEmail(env, userId) {

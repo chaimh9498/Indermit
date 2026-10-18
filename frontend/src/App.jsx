@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, useAuth, useUser } from "@clerk/clerk-react";
-import { ArrowRight, ChevronDown, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, Paperclip, PartyPopper, RefreshCw, Send, Sparkles, Users, X } from "lucide-react";
+import { ArrowRight, Bot, ChevronDown, Clock3, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, Paperclip, PartyPopper, RefreshCw, Send, Sparkles, Swords, Trophy, Users, X } from "lucide-react";
 import { apiRequest } from "./api";
 
 const MODELS = [
@@ -106,7 +106,7 @@ function Landing(props) {
 
 function Studio({ getToken, beta }) {
   const { user } = useUser();
-  const [view, setView] = useState("create");
+  const [view, setView] = useState(() => window.location.hash === "#plaa-i" ? "plaa-i" : "create");
   const [account, setAccount] = useState({ creditBalance: 0, paidCreditBalance: 0, promoCreditBalance: 0 });
   const [images, setImages] = useState([]);
   const [prompt, setPrompt] = useState("");
@@ -132,6 +132,11 @@ function Studio({ getToken, beta }) {
   }, [beta.role, getToken]);
 
   useEffect(() => { Promise.all([loadAccount(), loadImages(), loadAdmin()]).catch((error) => setMessage(error.message)); }, [loadAccount, loadAdmin, loadImages]);
+
+  function selectView(nextView) {
+    setView(nextView);
+    window.history.replaceState(null, "", nextView === "plaa-i" ? "#plaa-i" : window.location.pathname);
+  }
 
   async function generate(event) {
     event.preventDefault();
@@ -185,7 +190,7 @@ function Studio({ getToken, beta }) {
   }
 
   function editGeneratedImage(item) {
-    setView("create");
+    selectView("create");
     setLatestGeneration(null);
     setPrompt("");
     setModel(MODELS.some((candidate) => candidate.id === item.model && candidate.enabled) ? item.model : "auto");
@@ -247,10 +252,11 @@ function Studio({ getToken, beta }) {
 
   const activeModel = MODELS.find((item) => item.id === model);
   return <div className="app-shell"><BetaBar /><header className="app-header"><BrandWordmark /><nav className="app-nav">
-    <button className={view === "create" ? "active" : ""} onClick={() => setView("create")}><Sparkles size={15} /> Create</button>
-    <button className={view === "images" ? "active" : ""} onClick={() => setView("images")}><ImageIcon size={15} /> My images</button>
-    <button className={view === "credits" ? "active" : ""} onClick={() => setView("credits")}><CreditCard size={15} /> Buy credits</button>
-    {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { setView("admin"); refreshAdmin(); }}><Gauge size={15} /> Owner</button>}
+    <button className={view === "create" ? "active" : ""} onClick={() => selectView("create")}><Sparkles size={15} /> Create</button>
+    <button className={view === "plaa-i" ? "active" : ""} onClick={() => selectView("plaa-i")}><Swords size={15} /> Plaa I</button>
+    <button className={view === "images" ? "active" : ""} onClick={() => selectView("images")}><ImageIcon size={15} /> My images</button>
+    <button className={view === "credits" ? "active" : ""} onClick={() => selectView("credits")}><CreditCard size={15} /> Buy credits</button>
+    {beta.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={() => { selectView("admin"); refreshAdmin(); }}><Gauge size={15} /> Owner</button>}
   </nav><div className="account-cluster"><CreditBalance balance={account.creditBalance} promoBalance={account.promoCreditBalance} /><UserButton /></div></header>
   <main className="workspace">{message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
     {view === "create" && <section className="workspace-panel create-view"><div className="page-heading"><span>PUBLIC BETA STUDIO</span><h1>What do you want to create?</h1><p>Google Nano Banana 2 Lite, Grok Imagine 2.0 Low, and GPT Image 2.5 Sunburst Low are available now.</p></div>
@@ -268,6 +274,7 @@ function Studio({ getToken, beta }) {
       </article>}
     </section>}
     {view === "images" && <section className="workspace-panel"><div className="page-heading compact"><span>YOUR LIBRARY</span><h1>My images</h1><button className="icon-button" onClick={loadImages}><RefreshCw size={15} /> Refresh</button></div>{images.length ? <div className="image-grid">{images.map((item) => <article className="image-card" key={item.id}><img src={item.imageUrl} alt={item.prompt} /><div><p>{item.prompt}</p><span>{item.operationType === "edit" ? "Edit" : "Generation"} · {item.provider} · {item.creditCost} credits</span><div className="image-card-actions"><a href={item.downloadUrl}>Download</a><button onClick={() => editGeneratedImage(item)}>Edit</button></div></div></article>)}</div> : <EmptyState icon={<ImageIcon />} title="No images yet" text="Your private generations and edits will appear here." />}</section>}
+    {view === "plaa-i" && <PlaaIChallenge getToken={getToken} onAccountUpdate={(result) => setAccount((current) => ({ ...current, creditBalance: result.creditBalance, paidCreditBalance: result.paidCreditBalance, promoCreditBalance: result.promoCreditBalance }))} />}
     {view === "credits" && <section className="workspace-panel"><div className="page-heading"><span>PUBLIC BETA CHECKOUT</span><h1>Buy Indermit credits</h1></div><div className="bundle-grid beta-bundle-grid">{BUNDLES.map((bundle) => <article className="beta-package" key={bundle.id}><span>{bundle.name}</span><strong>{bundle.price}</strong><p>{bundle.credits} credits · one-time purchase</p><div className="bundle-model-list"><b>Generate or edit with</b>{MODELS.filter((item) => item.id !== "auto").map((item) => <div key={item.id}><span><strong>{item.name}</strong><small>{item.provider} · 1K low quality</small></span><em>{item.credits} {item.credits === 1 ? "credit" : "credits"} / image</em></div>)}</div><div className="package-usage-limit"><b>Public-beta usage limits</b><span>Up to 20 completed images per hour and 60 completed images per day, per account.</span></div><button disabled={!beta.stripeReady || busy || account.creditBalance > 5 || beta.purchaseEligible === false} onClick={() => checkout(bundle.id)}>Buy 100 credits</button></article>)}</div><p className="beta-package-note">You can purchase another package when your balance reaches 5 credits or less.</p><div className="mode-card checkout-bottom-banner"><LockKeyhole size={18} /><div><strong>{beta.stripeReady ? "Checkout with Stripe" : "Stripe checkout is being configured"}</strong>{!beta.stripeReady && <p>Purchasing stays disabled until checkout is available.</p>}</div></div></section>}
     {view === "admin" && beta.role === "admin" && <AdminView data={admin} members={members} onAdjust={adjustCredits} onRefresh={refreshAdmin} refreshing={adminRefreshing} updatedAt={adminUpdatedAt} />}
   </main>
@@ -291,6 +298,106 @@ function Studio({ getToken, beta }) {
     </form>
   </section></div>}
   </div>;
+}
+
+function PlaaIChallenge({ getToken, onAccountUpdate }) {
+  const [data, setData] = useState({ match: null, waitingPlayers: 0, stats: { played: 0, wins: 0 }, leaderboard: [] });
+  const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState("auto");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const activeModel = MODELS.find((item) => item.id === model) || MODELS[0];
+  const match = data.match;
+
+  const load = useCallback(async () => {
+    const result = await apiRequest("/v1/plaa-i", getToken);
+    setData(result);
+    return result;
+  }, [getToken]);
+
+  useEffect(() => { load().catch((error) => setMessage(error.message)); }, [load]);
+  useEffect(() => {
+    if (!["waiting", "active", "judging"].includes(match?.status)) return undefined;
+    const timer = window.setInterval(() => load().catch(() => {}), 4000);
+    return () => window.clearInterval(timer);
+  }, [load, match?.status]);
+
+  async function findMatch() {
+    setBusy(true); setMessage("");
+    try {
+      const result = await apiRequest("/v1/plaa-i/queue", getToken, { method: "POST", body: "{}" });
+      setData((current) => ({ ...current, match: result.match }));
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(false); }
+  }
+
+  async function leaveQueue() {
+    setBusy(true); setMessage("");
+    try {
+      await apiRequest("/v1/plaa-i/leave", getToken, { method: "POST", body: "{}" });
+      await load();
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(false); }
+  }
+
+  async function submitEntry(event) {
+    event.preventDefault();
+    if (!prompt.trim() || !match) return;
+    setBusy(true); setMessage("");
+    try {
+      const result = await apiRequest(`/v1/plaa-i/matches/${match.id}/submit`, getToken, {
+        method: "POST",
+        body: JSON.stringify({ prompt: prompt.trim(), model }),
+      });
+      setData((current) => ({ ...current, match: result.match }));
+      onAccountUpdate(result);
+      setPrompt("");
+      await load();
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(false); }
+  }
+
+  const completedEntries = match?.entries || [];
+  return <section className="workspace-panel plaa-page">
+    <div className="plaa-hero">
+      <div><span className="plaa-kicker"><Swords size={13} /> LIVE BETA GAME</span><h1>PLAA <i>I</i> Challenge</h1><p>Same category. Two players. Any Indermit model. The AI judge picks the stronger image.</p></div>
+      <div className="plaa-stats"><article><Trophy size={17} /><strong>{data.stats.wins}</strong><span>Wins</span></article><article><Swords size={17} /><strong>{data.stats.played}</strong><span>Played</span></article><article><Users size={17} /><strong>{data.waitingPlayers}</strong><span>Waiting</span></article></div>
+    </div>
+    {message && <div className="notice-banner">{message}<button onClick={() => setMessage("")}>×</button></div>}
+
+    {!match && <div className="plaa-lobby">
+      <div className="plaa-arena-preview"><span>PLAYER ONE</span><div className="plaa-versus">VS</div><span>PLAYER TWO</span></div>
+      <h2>Think you can out-prompt another creator?</h2>
+      <p>You and your opponent receive the same category. Each player chooses a model and creates one image. Normal model credit prices apply.</p>
+      <button className="plaa-primary" onClick={findMatch} disabled={busy}>{busy ? <LoaderCircle className="spin" size={18} /> : <Swords size={18} />}{busy ? "Entering arena…" : "Find a challenger"}</button>
+      <small>Wins are recorded on the Plaa I leaderboard. Credit rewards are not active during this beta.</small>
+    </div>}
+
+    {match?.status === "waiting" && <div className="plaa-waiting">
+      <div className="plaa-radar"><Swords size={34} /></div><span>MATCHMAKING</span><h2>Looking for your challenger…</h2>
+      <p>Keep this page open. The battle starts automatically when another player joins.</p>
+      <button className="plaa-secondary" onClick={leaveQueue} disabled={busy}>Leave queue</button>
+    </div>}
+
+    {match?.status === "active" && <div className="plaa-battle">
+      <header><div><span>YOUR CATEGORY</span><h2>{match.category}</h2></div><div className="plaa-player-status"><span className={match.youSubmitted ? "done" : ""}>{match.youSubmitted ? "You submitted" : "Your turn"}</span><span className={match.opponentSubmitted ? "done" : ""}>{match.opponentSubmitted ? "Opponent submitted" : "Opponent creating"}</span></div></header>
+      {!match.youSubmitted ? <form className="plaa-composer" onSubmit={submitEntry}>
+        <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={1200} placeholder={`Write the winning prompt for “${match.category}”…`} />
+        <div><label className="live-select"><span><small>Your model</small><strong>{activeModel.provider} · {activeModel.name}</strong></span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item.id} value={item.id}>{item.provider} · {item.name} — {item.credits} credits</option>)}</select><ChevronDown size={15} /></label>
+          <button className="plaa-primary" disabled={busy || !prompt.trim()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={17} />}{busy ? "Creating your entry…" : `Create entry · ${activeModel.credits} credits`}</button></div>
+      </form> : <div className="plaa-submitted"><Clock3 size={25} /><div><h3>Your image is locked in</h3><p>{match.opponentSubmitted ? "Both entries are ready. The AI judge is starting." : "Waiting for your opponent to submit their image."}</p></div></div>}
+    </div>}
+
+    {match?.status === "judging" && <div className="plaa-judging"><div className="plaa-radar judging"><Bot size={34} /></div><span>AI JUDGE</span><h2>Reviewing both images…</h2><p>The judge is comparing category fit, creativity, composition, clarity, and visual quality.</p></div>}
+
+    {match?.status === "completed" && <div className={`plaa-result ${match.result}`}>
+      <header><span><Trophy size={15} /> CHALLENGE COMPLETE</span><h2>{match.result === "win" ? "You won this Plaa I." : "Your challenger takes this one."}</h2><p>{match.judgeReason}</p></header>
+      <div className="plaa-entry-grid">{completedEntries.map((entry) => <article className={entry.isYou ? "you" : ""} key={entry.side}><div className="plaa-entry-label"><strong>{entry.isYou ? "Your image" : "Challenger"}</strong><span>{entry.provider || entry.model}</span></div>{entry.imageUrl && <img src={entry.imageUrl} alt={entry.isYou ? "Your challenge entry" : "Opponent challenge entry"} />}<p>{entry.prompt}</p></article>)}</div>
+      <button className="plaa-primary" onClick={findMatch} disabled={busy}>{busy ? <LoaderCircle className="spin" size={18} /> : <Swords size={18} />}Play again</button>
+    </div>}
+
+    <div className="plaa-bottom-grid"><section><h3>How Plaa I works</h3><ol><li><b>1</b><span>Match with another Indermit creator.</span></li><li><b>2</b><span>Build one prompt for the shared category.</span></li><li><b>3</b><span>Choose any available model and generate.</span></li><li><b>4</b><span>The AI judge selects the winning image.</span></li></ol></section><section><h3>Leaderboard</h3>{data.leaderboard.length ? <div className="plaa-leaderboard">{data.leaderboard.map((item) => <div key={item.rank}><b>#{item.rank}</b><span>{item.name}</span><strong>{item.wins} {item.wins === 1 ? "win" : "wins"}</strong></div>)}</div> : <p className="plaa-empty">The first winners will appear here.</p>}</section></div>
+  </section>;
 }
 
 function AdminView({ data, members, onAdjust, onRefresh, refreshing, updatedAt }) {
