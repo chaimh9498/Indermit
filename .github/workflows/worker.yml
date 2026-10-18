@@ -1,5 +1,7 @@
 name: Deploy production API
 
+# A workflow-file change also refreshes rotated production secrets.
+
 on:
   push:
     branches: [main]
