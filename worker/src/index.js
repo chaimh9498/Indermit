@@ -267,7 +267,8 @@ async function beginPaidBetaCheckout(env, userId, bundleId, creditBalance) {
 
 async function handleAdmin(request, env, _userId, url) {
   if (request.method === "GET" && url.pathname === "/v1/admin/status") {
-    const [users, signupBonusUsers, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
+    const [signedUpUsers, betaMembers, signupBonusUsers, paidUsers, generations, completed, failed, recent, providerUsage] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS count FROM users").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM beta_members").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM signup_credit_grants").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM paid_beta_slots WHERE status = 'paid'").first(),
@@ -321,7 +322,8 @@ async function handleAdmin(request, env, _userId, url) {
     const usageDashboard = buildUsageDashboard(providerUsage.results, providerLimits);
     return json({
       summary: {
-        betaMembers: users?.count || 0,
+        signedUpUsers: signedUpUsers?.count || 0,
+        betaMembers: betaMembers?.count || 0,
         signupBonusUsers: signupBonusUsers?.count || 0,
         paidBetaUsers: paidUsers?.count || 0,
         generations: generations?.count || 0,
