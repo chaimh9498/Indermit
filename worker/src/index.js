@@ -101,6 +101,7 @@ async function handleAuthenticated(request, env, _context, { userId }) {
     const input = await request.json();
     const account = await env.DB.prepare("SELECT credit_balance FROM users WHERE user_id = ?").bind(userId).first();
     try {
+      await requireVerifiedCheckoutEmail(env, userId);
       const session = await beginPaidBetaCheckout(env, userId, input.bundleId, account?.credit_balance || 0);
       return json({ url: session.url });
     } catch (error) {
@@ -123,6 +124,19 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   }
 
   return json({ error: "Not found" }, 404);
+}
+
+async function requireVerifiedCheckoutEmail(env, userId) {
+  if (!env.CLERK_SECRET_KEY) throw new Error("Email verification for checkout is temporarily unavailable.");
+  const response = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(userId)}`, {
+    headers: { Authorization: `Bearer ${env.CLERK_SECRET_KEY}` },
+  });
+  if (!response.ok) throw new Error("Email verification for checkout is temporarily unavailable.");
+  const user = await response.json();
+  const primaryEmail = user.email_addresses?.find((email) => email.id === user.primary_email_address_id);
+  if (primaryEmail?.verification?.status !== "verified") {
+    throw new Error("Verify your email address before purchasing credits.");
+  }
 }
 
 async function enrollBetaMember(request, env, userId) {

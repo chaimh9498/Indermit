@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react";
+import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { ArrowRight, ChevronDown, CreditCard, Gauge, Image as ImageIcon, KeyRound, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Send, Sparkles, Users, X } from "lucide-react";
 import { apiRequest } from "./api";
 
@@ -88,6 +88,7 @@ function Landing(props) {
 }
 
 function Studio({ getToken, beta }) {
+  const { user } = useUser();
   const [view, setView] = useState("create");
   const [account, setAccount] = useState({ creditBalance: 0 });
   const [images, setImages] = useState([]);
@@ -103,6 +104,7 @@ function Studio({ getToken, beta }) {
   const [members, setMembers] = useState([]);
   const [adminRefreshing, setAdminRefreshing] = useState(false);
   const [adminUpdatedAt, setAdminUpdatedAt] = useState(null);
+  const [emailVerification, setEmailVerification] = useState({ open: false, bundleId: null, code: "", busy: false, error: "" });
 
   const loadAccount = useCallback(async () => setAccount(await apiRequest("/v1/account", getToken)), [getToken]);
   const loadImages = useCallback(async () => { const result = await apiRequest("/v1/generations", getToken); setImages(result.generations || []); }, [getToken]);
@@ -171,10 +173,40 @@ function Studio({ getToken, beta }) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function checkout(bundleId) {
+  async function startCheckout(bundleId) {
     setBusy(true); setMessage("");
     try { const result = await apiRequest("/v1/billing/checkout", getToken, { method: "POST", body: JSON.stringify({ bundleId }) }); window.location.assign(result.url); }
     catch (error) { setMessage(error.message); setBusy(false); }
+  }
+
+  async function checkout(bundleId) {
+    const email = user?.primaryEmailAddress;
+    if (email?.verification?.status === "verified") return startCheckout(bundleId);
+    if (!email) return setMessage("Add an email address to your account before purchasing credits.");
+    setEmailVerification({ open: true, bundleId, code: "", busy: true, error: "" });
+    try {
+      await email.prepareVerification({ strategy: "email_code" });
+      setEmailVerification((current) => ({ ...current, busy: false }));
+    } catch (error) {
+      setEmailVerification((current) => ({ ...current, busy: false, error: error.errors?.[0]?.longMessage || error.message || "The verification code could not be sent." }));
+    }
+  }
+
+  async function completeEmailVerification(event) {
+    event.preventDefault();
+    const email = user?.primaryEmailAddress;
+    if (!email || !emailVerification.code.trim()) return;
+    setEmailVerification((current) => ({ ...current, busy: true, error: "" }));
+    try {
+      const verifiedEmail = await email.attemptVerification({ code: emailVerification.code.trim() });
+      if (verifiedEmail.verification?.status !== "verified") throw new Error("That verification code was not accepted.");
+      await user.reload();
+      const bundleId = emailVerification.bundleId;
+      setEmailVerification({ open: false, bundleId: null, code: "", busy: false, error: "" });
+      await startCheckout(bundleId);
+    } catch (error) {
+      setEmailVerification((current) => ({ ...current, busy: false, error: error.errors?.[0]?.longMessage || error.message || "That verification code was not accepted." }));
+    }
   }
 
   async function adjustCredits(userId, amount) {
@@ -227,6 +259,15 @@ function Studio({ getToken, beta }) {
     <div className="generation-fade-bar"><span /></div>
     {generationProgress.imageUrl && <img className="generation-preloader" src={generationProgress.imageUrl} alt="" onLoad={() => setGenerationProgress(null)} onError={() => { setGenerationProgress(null); setMessage("The image was created, but the preview could not load. You can find it in My Images."); }} />}
   </div></div>}
+  {emailVerification.open && <div className="modal-backdrop" onMouseDown={() => !emailVerification.busy && setEmailVerification({ open: false, bundleId: null, code: "", busy: false, error: "" })}><section className="access-card verification-card" onMouseDown={(event) => event.stopPropagation()}>
+    <button className="modal-close" disabled={emailVerification.busy} onClick={() => setEmailVerification({ open: false, bundleId: null, code: "", busy: false, error: "" })} aria-label="Close">×</button>
+    <div className="access-icon"><LockKeyhole size={22} /></div><span className="section-label">SECURE CHECKOUT</span><h2>Verify your email</h2>
+    <p>Before purchasing credits, enter the verification code sent to <strong>{user?.primaryEmailAddress?.emailAddress}</strong>.</p>
+    <form onSubmit={completeEmailVerification}><label htmlFor="checkout-email-code">Verification code</label><input id="checkout-email-code" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailVerification.code} onChange={(event) => setEmailVerification((current) => ({ ...current, code: event.target.value, error: "" }))} placeholder="Enter 6-digit code" autoFocus />
+      {emailVerification.error && <p className="form-message">{emailVerification.error}</p>}
+      <button className="button button-primary access-submit" disabled={emailVerification.busy || !emailVerification.code.trim()}>{emailVerification.busy ? <LoaderCircle className="spin" size={17} /> : <LockKeyhole size={16} />}{emailVerification.busy ? "Verifying…" : "Verify and continue to payment"}</button>
+    </form>
+  </section></div>}
   </div>;
 }
 
