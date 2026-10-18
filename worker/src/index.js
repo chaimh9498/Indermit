@@ -50,6 +50,13 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   const url = new URL(request.url);
   await ensureUser(env, userId);
 
+  if (request.method === "POST" && url.pathname === "/v1/promotions/signup-bonus/acknowledge") {
+    await env.DB.prepare(
+      "UPDATE signup_credit_grants SET celebration_seen_at = COALESCE(celebration_seen_at, CURRENT_TIMESTAMP) WHERE user_id = ?",
+    ).bind(userId).run();
+    return json({ acknowledged: true });
+  }
+
   if (request.method === "POST" && url.pathname === "/v1/beta/enroll") {
     return enrollBetaMember(request, env, userId);
   }
@@ -87,10 +94,12 @@ async function handleAuthenticated(request, env, _context, { userId }) {
   if (request.method === "GET" && url.pathname === "/v1/account") {
     await syncCreditBuckets(env, userId);
     const user = await env.DB.prepare(
-      "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
+      "SELECT credit_balance, paid_credit_balance, promo_credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
     ).bind(userId).first();
     return json({
       creditBalance: user?.credit_balance || 0,
+      paidCreditBalance: user?.paid_credit_balance || 0,
+      promoCreditBalance: user?.promo_credit_balance || 0,
       freeGenerationsRemaining: env.FREE_GENERATIONS_ENABLED === "true" ? user?.free_generations_remaining || 0 : 0,
       role: member?.role || null,
     });
@@ -192,13 +201,20 @@ async function getSignupCreditPromotion(env, userId) {
   const maximum = positiveInteger(env.SIGNUP_BONUS_USERS, 25);
   const [count, grant] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS count FROM signup_credit_grants").first(),
-    env.DB.prepare("SELECT credits FROM signup_credit_grants WHERE user_id = ?").bind(userId).first(),
+    env.DB.prepare(
+      `SELECT g.credits, g.celebration_seen_at, u.promo_credit_balance
+       FROM signup_credit_grants g
+       JOIN users u ON u.user_id = g.user_id
+       WHERE g.user_id = ?`,
+    ).bind(userId).first(),
   ]);
   const claimed = Number(count?.count || 0);
   return {
     signupBonusCredits: positiveInteger(env.SIGNUP_BONUS_CREDITS, 2),
     signupBonusRemaining: Math.max(0, maximum - claimed),
+    signupBonusBalance: Number(grant?.promo_credit_balance || 0),
     receivedSignupBonus: Boolean(grant),
+    signupBonusCelebrationPending: Boolean(grant && !grant.celebration_seen_at),
   };
 }
 
@@ -467,11 +483,13 @@ async function createGeneration(request, env, userId, apiOrigin) {
     "SELECT id, provider, model, prompt, aspect_ratio, credit_cost, charge_kind, operation_type, created_at FROM generations WHERE id = ?",
   ).bind(generationId).first();
   const user = await env.DB.prepare(
-    "SELECT credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
+    "SELECT credit_balance, paid_credit_balance, promo_credit_balance, free_generations_remaining FROM users WHERE user_id = ?",
   ).bind(userId).first();
   return json({
     generation: await serializeGeneration(row, env, apiOrigin),
     creditBalance: user.credit_balance,
+    paidCreditBalance: user.paid_credit_balance,
+    promoCreditBalance: user.promo_credit_balance,
     freeGenerationsRemaining: env.FREE_GENERATIONS_ENABLED === "true" ? user.free_generations_remaining : 0,
   }, 201);
 }
